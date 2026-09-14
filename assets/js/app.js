@@ -60,12 +60,23 @@
       { id:"r2", day:15, item:"Serviços Extra / Freelance", values:{"2026-08":600,"2026-09":450,"2026-10":800,"2026-11":300,"2026-12":1200,"2027-01":500,"2027-02":650,"2027-03":400} },
       { id:"r3", day:25, item:"Rendimentos / Outros", values:{"2026-08":150,"2026-09":150,"2026-10":160,"2026-11":155,"2026-12":170,"2027-01":165,"2027-02":175,"2027-03":180} }
     ];
-    return { version: CURRENT_SCHEMA_VERSION, months: months, selectedMonth: currentKey, expenses: expenses, income: income, nextId: 100 };
+    var daily = {
+      nextId: 1,
+      balances: {},
+      entries: [
+        { id:"d1", day: new Date().getDate(), item:"Padaria", amount: 18.5, monthKey: currentKey },
+        { id:"d2", day: new Date().getDate(), item:"Uber", amount: 22, monthKey: currentKey }
+      ]
+    };
+    daily.balances[currentKey] = { initial: 500 };
+    daily.nextId = 3;
+
+    return { version: CURRENT_SCHEMA_VERSION, months: months, selectedMonth: currentKey, expenses: expenses, income: income, nextId: 100, daily: daily };
   }
 
   function emptyData(){
     var currentKey = getTodayMonthKey();
-    return { version: CURRENT_SCHEMA_VERSION, months: [currentKey], selectedMonth: currentKey, expenses: [], income: [], nextId: 1 };
+    return { version: CURRENT_SCHEMA_VERSION, months: [currentKey], selectedMonth: currentKey, expenses: [], income: [], nextId: 1, daily: { nextId: 1, entries: [], balances: {} } };
   }
 
   var state = null;
@@ -419,6 +430,56 @@
     if (!state.selectedMonth) {
       state.selectedMonth = todayKey;
     }
+    if (!state.daily) {
+      state.daily = { nextId: 1, entries: [], balances: {} };
+    }
+    if (!state.daily.balances) state.daily.balances = {};
+    if (!state.daily.entries) state.daily.entries = [];
+    if (!state.daily.nextId) state.daily.nextId = 1;
+  }
+
+  // --- DIÁRIO (lançamentos do dia a dia) ---
+  function sumDailyMonth(monthKey){
+    var total = 0, count = 0;
+    state.daily.entries.forEach(function(row){
+      if(row.monthKey !== monthKey) return;
+      var v = row.amount;
+      if(typeof v === 'number' && !isNaN(v)){ total += v; count++; }
+    });
+    return { total: total, count: count };
+  }
+
+  function mensalSaldoFor(monthKey){
+    var exp = sumMonth(state.expenses, monthKey);
+    var inc = sumMonth(state.income, monthKey);
+    return inc.total - exp.total;
+  }
+
+  // Garante que o mês tenha um "saldo atual" inicial definido, encadeando
+  // o saldo final (diário) + saldo mensal do(s) mês(es) anterior(es) —
+  // mesmo que o app tenha ficado sem uso por mais de um mês.
+  function ensureDailyBalance(monthKey){
+    if(state.daily.balances[monthKey]) return;
+
+    var existingKeys = Object.keys(state.daily.balances).sort();
+    var prevKey = null;
+    existingKeys.forEach(function(k){ if(k < monthKey) prevKey = k; });
+
+    if(!prevKey){
+      state.daily.balances[monthKey] = { initial: 0 };
+      return;
+    }
+
+    var cursor = prevKey;
+    while(cursor !== monthKey){
+      var next = nextMonthKey(cursor);
+      if(!state.daily.balances[cursor]) state.daily.balances[cursor] = { initial: 0 };
+      var finalBalance = state.daily.balances[cursor].initial - sumDailyMonth(cursor).total;
+      if(!state.daily.balances[next]){
+        state.daily.balances[next] = { initial: finalBalance + mensalSaldoFor(cursor) };
+      }
+      cursor = next;
+    }
   }
 
   function removeMonth(mk) {
@@ -718,6 +779,169 @@
     });
   }
 
+  function renderDiario(){
+    var mk = getTodayMonthKey();
+    ensureDailyBalance(mk);
+
+    var exp = sumDailyMonth(mk);
+    var initial = state.daily.balances[mk].initial;
+    var saldoAtual = initial - exp.total;
+    var saldoMensal = mensalSaldoFor(mk);
+
+    var elExp = document.getElementById('diarioDespesas');
+    if(elExp) elExp.textContent = fmtMoney(exp.total);
+
+    var elExpCount = document.getElementById('diarioDespesasCount');
+    if(elExpCount) elExpCount.textContent = exp.count + (exp.count===1?' item':' itens') + ' em ' + monthLabel(mk);
+
+    var elHead = document.getElementById('diarioTotalHead');
+    if(elHead) elHead.textContent = fmtMoney(exp.total);
+
+    var saldoInput = document.getElementById('diarioSaldoAtualInput');
+    if(saldoInput && document.activeElement !== saldoInput){
+      saldoInput.value = saldoAtual.toFixed(2);
+    }
+    if(saldoInput){
+      saldoInput.classList.toggle('pos', saldoAtual >= 0);
+      saldoInput.classList.toggle('neg', saldoAtual < 0);
+    }
+
+    var elFinal = document.getElementById('diarioSaldoFinal');
+    if(elFinal){
+      elFinal.textContent = fmtMoney(saldoMensal);
+      elFinal.classList.toggle('pos', saldoMensal >= 0);
+      elFinal.classList.toggle('neg', saldoMensal < 0);
+    }
+    var elFinalSub = document.getElementById('diarioSaldoFinalSub');
+    if(elFinalSub) elFinalSub.textContent = 'igual ao saldo de ' + monthLabel(mk) + ' em Mensal';
+
+    renderDiarioTable();
+  }
+
+  function renderDiarioTable(){
+    var mk = getTodayMonthKey();
+    var body = document.getElementById('diarioBody');
+    if(!body) return;
+    body.innerHTML = "";
+
+    var list = state.daily.entries.filter(function(row){ return row.monthKey === mk; }).sort(function(a, b){
+      var da = (a.day === null || a.day === undefined || isNaN(a.day)) ? 999 : a.day;
+      var db = (b.day === null || b.day === undefined || isNaN(b.day)) ? 999 : b.day;
+      return da - db;
+    });
+
+    if(list.length === 0){
+      var tr = document.createElement('tr');
+      var td = document.createElement('td');
+      td.colSpan = 4;
+      td.className = 'empty-note';
+      td.textContent = 'Nenhum lançamento ainda neste mês.';
+      tr.appendChild(td);
+      body.appendChild(tr);
+      return;
+    }
+
+    list.forEach(function(row){
+      var tr = document.createElement('tr');
+
+      var tdDay = document.createElement('td');
+      var dayInput = document.createElement('input');
+      dayInput.type = 'number';
+      dayInput.min = 1; dayInput.max = 31;
+      dayInput.className = 'cell-input day-input';
+      dayInput.placeholder = '—';
+      dayInput.value = (row.day === null || row.day === undefined) ? '' : row.day;
+      dayInput.addEventListener('change', function(){
+        var v = parseInt(dayInput.value,10);
+        row.day = isNaN(v) ? null : Math.max(1, Math.min(31, v));
+        persist();
+        renderDiarioTable();
+      });
+      tdDay.appendChild(dayInput);
+
+      var tdItem = document.createElement('td');
+      var itemInput = document.createElement('input');
+      itemInput.type = 'text';
+      itemInput.className = 'cell-input item-input';
+      itemInput.placeholder = 'nome do gasto';
+      itemInput.value = row.item || '';
+      itemInput.addEventListener('change', function(){
+        row.item = itemInput.value;
+        persist();
+      });
+      tdItem.appendChild(itemInput);
+
+      var tdVal = document.createElement('td');
+      var valInput = document.createElement('input');
+      valInput.type = 'number';
+      valInput.step = '0.01';
+      valInput.className = 'cell-input value-input';
+      valInput.placeholder = 'R$ —';
+      valInput.value = (typeof row.amount === 'number' && !isNaN(row.amount)) ? row.amount : '';
+      valInput.addEventListener('change', function(){
+        var v = parseFloat(valInput.value);
+        row.amount = isNaN(v) ? undefined : v;
+        persist();
+        renderDiario();
+      });
+      tdVal.appendChild(valInput);
+
+      var tdDel = document.createElement('td');
+      var delBtn = document.createElement('button');
+      delBtn.className = 'row-del';
+      delBtn.title = 'Remover lançamento';
+      delBtn.textContent = '×';
+      delBtn.addEventListener('click', function(){
+        var idx = state.daily.entries.indexOf(row);
+        if(idx > -1) state.daily.entries.splice(idx, 1);
+        persist();
+        renderDiario();
+      });
+      tdDel.appendChild(delBtn);
+
+      tr.appendChild(tdDay);
+      tr.appendChild(tdItem);
+      tr.appendChild(tdVal);
+      tr.appendChild(tdDel);
+      body.appendChild(tr);
+    });
+  }
+
+  function addDiarioRow(){
+    var mk = getTodayMonthKey();
+    var id = 'd' + (state.daily.nextId++);
+    state.daily.entries.push({ id: id, day: new Date().getDate(), item: '', amount: undefined, monthKey: mk });
+    persist();
+    renderDiario();
+    setTimeout(function(){
+      var body = document.getElementById('diarioBody');
+      if(body){
+        var inputs = body.querySelectorAll('.item-input');
+        if(inputs.length) inputs[inputs.length-1].focus();
+      }
+    }, 30);
+  }
+
+  var btnAddDiario = document.getElementById('addDiarioBtn');
+  if(btnAddDiario) btnAddDiario.addEventListener('click', addDiarioRow);
+
+  var diarioSaldoAtualInput = document.getElementById('diarioSaldoAtualInput');
+  if(diarioSaldoAtualInput){
+    diarioSaldoAtualInput.addEventListener('change', function(){
+      var mk = getTodayMonthKey();
+      ensureDailyBalance(mk);
+      var v = parseFloat(diarioSaldoAtualInput.value);
+      if(isNaN(v)) v = 0;
+      // O campo mostra o saldo já descontado dos gastos do mês; ao editar,
+      // recalculamos o "saldo inicial" guardado para manter a subtração
+      // automática funcionando a partir do novo valor informado.
+      var expTotal = sumDailyMonth(mk).total;
+      state.daily.balances[mk].initial = v + expTotal;
+      persist();
+      renderDiario();
+    });
+  }
+
   function addRow(kind){
     var list = kind === 'expenses' ? state.expenses : state.income;
     var id = (kind === 'expenses' ? 'e' : 'r') + (state.nextId++);
@@ -770,6 +994,7 @@
   var sheetOverlay = document.getElementById('sheetOverlay');
 
   var viewMensal = document.getElementById('viewMensal');
+  var viewDiario = document.getElementById('viewDiario');
   var viewAnual = document.getElementById('viewAnual');
   var viewAuth = document.getElementById('viewAuth');
 
@@ -797,6 +1022,7 @@
 
 function showView(view){
     if(viewMensal) viewMensal.style.display = 'none';
+    if(viewDiario) viewDiario.style.display = 'none';
     if(viewAnual) viewAnual.style.display = 'none';
     if(viewAuth) viewAuth.style.display = 'none';
 
@@ -825,6 +1051,12 @@ function showView(view){
       if(pageTitle) pageTitle.textContent = 'Resumo anual';
       if(pageSub) pageSub.textContent = 'Total de despesas e receitas, separado por ano.';
       renderAnual();
+    } else if(view === 'diario'){
+      if(viewDiario) viewDiario.style.display = 'block';
+      activateTriggers('diario');
+      if(pageTitle) pageTitle.textContent = 'Diário';
+      if(pageSub) pageSub.textContent = 'Lançamentos do dia a dia, independentes do controle mensal.';
+      renderDiario();
     } else if(view === 'auth'){
       if(viewAuth) viewAuth.style.display = 'block';
       activateTriggers('auth');

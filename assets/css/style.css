@@ -185,6 +185,28 @@ h1{
 .stat.receitas .stat-value{ color: var(--gold); }
 .stat.saldo .stat-value.pos{ color: var(--pos); }
 .stat.saldo .stat-value.neg{ color: var(--neg); }
+
+.stat-value-input{
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 25px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  border: none;
+  border-bottom: 1px dashed transparent;
+  background: transparent;
+  color: inherit;
+  width: 100%;
+  padding: 0 0 1px;
+  outline: none;
+  -moz-appearance: textfield;
+}
+.stat-value-input::-webkit-inner-spin-button,
+.stat-value-input::-webkit-outer-spin-button{ -webkit-appearance:none; margin:0; }
+.stat-value-input:hover{ border-bottom-color: var(--rule-strong); }
+.stat-value-input:focus{ border-bottom-color: var(--gold); }
+.stat.saldo .stat-value-input.pos{ color: var(--pos); }
+.stat.saldo .stat-value-input.neg{ color: var(--neg); }
 .stat-sub{
   font-size: 11px;
   color: var(--ink-faint);
@@ -890,6 +912,7 @@ footer button:hover{ color: var(--margin); }
   thead th, tbody td, .book-head{ padding-left: 14px; padding-right: 14px; }
   tbody td:first-child{ padding-left: 10px; padding-right: 2px; }
   .stat-value{ font-size: 21px; }
+  .stat-value-input{ font-size: 21px; }
   thead th.col-day{ width: 40px; }
   thead th.col-value{ width: 92px; padding-left: 6px; }
   thead th.col-action{ width: 30px; }
