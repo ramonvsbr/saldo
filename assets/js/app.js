@@ -462,31 +462,34 @@
     return inc.total - exp.total;
   }
 
-  // Garante que o mês tenha um "saldo atual" inicial definido, encadeando
-  // o saldo final (diário) + saldo mensal do(s) mês(es) anterior(es) —
-  // mesmo que o app tenha ficado sem uso por mais de um mês.
-  function ensureDailyBalance(monthKey){
-    if(state.daily.balances[monthKey]) return;
-
-    var existingKeys = Object.keys(state.daily.balances).sort();
-    var prevKey = null;
-    existingKeys.forEach(function(k){ if(k < monthKey) prevKey = k; });
-
-    if(!prevKey){
-      state.daily.balances[monthKey] = { initial: 0 };
-      return;
-    }
-
-    var cursor = prevKey;
-    while(cursor !== monthKey){
-      var next = nextMonthKey(cursor);
-      if(!state.daily.balances[cursor]) state.daily.balances[cursor] = { initial: 0 };
-      var finalBalance = state.daily.balances[cursor].initial - sumDailyMonth(cursor).total;
-      if(!state.daily.balances[next]){
-        state.daily.balances[next] = { initial: finalBalance + mensalSaldoFor(cursor) };
+  // Recalcula a cadeia de saldos do Diário para TODOS os meses existentes,
+  // do mais antigo para o mais novo: o saldo inicial de um mês = saldo atual
+  // final do mês anterior (já descontados os gastos do dia a dia) + saldo
+  // mensal (receitas - despesas) desse mês anterior. Isso roda sempre que o
+  // Diário é exibido, então qualquer alteração em meses anteriores (gastos
+  // do dia a dia, receitas/despesas do Mensal) já reflete automaticamente
+  // nos meses seguintes. Um mês só "quebra" essa cadeia quando o usuário
+  // edita manualmente o campo "Saldo atual" dele (fica marcado como manual
+  // e passa a ser o novo ponto de partida para os meses seguintes).
+  function recomputeDailyBalances(){
+    var sorted = state.months.slice().sort();
+    var carry = 0;
+    sorted.forEach(function(mk, idx){
+      var existing = state.daily.balances[mk];
+      if(idx === 0){
+        var initVal = (existing && typeof existing.initial === 'number') ? existing.initial : 0;
+        state.daily.balances[mk] = { initial: initVal, manual: !!(existing && existing.manual) };
+        carry = initVal;
+      } else if(existing && existing.manual){
+        carry = existing.initial;
+      } else {
+        var prevKey = sorted[idx-1];
+        var prevFinal = carry - sumDailyMonth(prevKey).total;
+        var thisInitial = prevFinal + mensalSaldoFor(prevKey);
+        state.daily.balances[mk] = { initial: thisInitial, manual: false };
+        carry = thisInitial;
       }
-      cursor = next;
-    }
+    });
   }
 
   function removeMonth(mk) {
@@ -847,7 +850,7 @@
   function renderDiario(){
     var mk = getSelectedDiarioMonth();
     renderDiarioTabs();
-    ensureDailyBalance(mk);
+    recomputeDailyBalances();
 
     var exp = sumDailyMonth(mk);
     var initial = state.daily.balances[mk].initial;
@@ -995,14 +998,16 @@
   if(diarioSaldoAtualInput){
     diarioSaldoAtualInput.addEventListener('change', function(){
       var mk = getSelectedDiarioMonth();
-      ensureDailyBalance(mk);
+      recomputeDailyBalances();
       var v = parseFloat(diarioSaldoAtualInput.value);
       if(isNaN(v)) v = 0;
       // O campo mostra o saldo já descontado dos gastos do mês; ao editar,
       // recalculamos o "saldo inicial" guardado para manter a subtração
-      // automática funcionando a partir do novo valor informado.
+      // automática funcionando a partir do novo valor informado. Esse mês
+      // passa a ser "manual": os meses seguintes vão encadear a partir
+      // deste valor em vez de recalcular a partir de meses anteriores.
       var expTotal = sumDailyMonth(mk).total;
-      state.daily.balances[mk].initial = v + expTotal;
+      state.daily.balances[mk] = { initial: v + expTotal, manual: true };
       persist();
       renderDiario();
     });
@@ -1211,7 +1216,7 @@ function showView(view){
           showToast('Login efetuado com sucesso!', 'success');
           setBtnLoading(loginSubmitBtn, true, 'Sincronizando...');
           return loadFromCloud().then(function(){
-            showView('mensal');
+            showView('diario');
           });
         } else {
           showToast(data.error || 'Falha no login', 'error');
@@ -1253,7 +1258,7 @@ function showView(view){
           setSession({ token: data.token, name: data.name || name, firstName: data.firstName || firstName });
           showToast('Cadastro realizado com sucesso!', 'success');
           saveToCloud();
-          showView('mensal');
+          showView('diario');
         } else {
           showToast(data.error || 'Falha no cadastro', 'error');
         }
@@ -1287,7 +1292,7 @@ function showView(view){
   function doLogout(){
     clearSession();
     closeSheet();
-    showView('mensal');
+    showView('diario');
   }
 
   var logoutBtns = document.querySelectorAll('.account-logout-btn');
@@ -1509,17 +1514,17 @@ function showView(view){
         loadFromCloud().then(function(loaded){
           if (!loaded) {
             persist({ silent: true });
-            render();
           }
+          showView('diario');
         });
       } else {
         persist({ silent: true });
-        render();
+        showView('diario');
       }
     }).catch(function(){
       state = seedData();
       ensureCurrentMonthSelected();
-      render();
+      showView('diario');
     });
   }
 

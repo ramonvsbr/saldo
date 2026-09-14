@@ -78,11 +78,11 @@
 
       <!-- VISUALIZAÇÃO E DEMAIS ÍCONES EM BAIXO -->
       <p class="nav-eyebrow" style="margin-top:14px;">Navegar</p>
-      <button class="nav-link view-trigger" data-view="diario">
+      <button class="nav-link view-trigger active" data-view="diario">
         <span class="nav-link-title">Diário</span>
         <span class="nav-link-sub">lançamentos do dia a dia</span>
       </button>
-      <button class="nav-link view-trigger active" data-view="mensal">
+      <button class="nav-link view-trigger" data-view="mensal">
         <span class="nav-link-title">Mensal</span>
         <span class="nav-link-sub">despesas e receitas do mês</span>
       </button>
@@ -98,12 +98,12 @@
     <div class="wrap" id="app">
       <header class="top-bar">
         <div class="top-bar-title">
-          <h1 id="pageTitle">Controle mensal</h1>
-          <p class="sub" id="pageSub">Despesas e receitas, mês a mês.</p>
+          <h1 id="pageTitle">Diário</h1>
+          <p class="sub" id="pageSub">Lançamentos do dia a dia, independentes do controle mensal.</p>
         </div>
       </header>
 
-      <div id="viewMensal">
+      <div id="viewMensal" style="display:none;">
         <div class="tabs-row" id="tabsRow"></div>
 
         <div class="panel">
@@ -163,7 +163,7 @@
         </section>
       </div>
 
-      <div id="viewDiario" style="display:none;">
+      <div id="viewDiario">
         <div class="tabs-row" id="diarioTabsRow"></div>
 
         <div class="panel">
@@ -303,11 +303,11 @@
 
   <!-- Rodapé de navegação para celular -->
   <nav class="mobile-tabbar" id="mobileTabbar">
-    <button class="tabbar-btn view-trigger" data-view="diario">
+    <button class="tabbar-btn view-trigger active" data-view="diario">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
       <span>Diário</span>
     </button>
-    <button class="tabbar-btn view-trigger active" data-view="mensal">
+    <button class="tabbar-btn view-trigger" data-view="mensal">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"></rect><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"></line><line x1="8" y1="2.5" x2="8" y2="6.5"></line><line x1="16" y1="2.5" x2="16" y2="6.5"></line></svg>
       <span>Mensal</span>
     </button>
