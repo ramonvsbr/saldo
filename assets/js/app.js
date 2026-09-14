@@ -71,12 +71,12 @@
     daily.balances[currentKey] = { initial: 500 };
     daily.nextId = 3;
 
-    return { version: CURRENT_SCHEMA_VERSION, months: months, selectedMonth: currentKey, expenses: expenses, income: income, nextId: 100, daily: daily };
+    return { version: CURRENT_SCHEMA_VERSION, months: months, selectedMonth: currentKey, selectedDiarioMonth: currentKey, expenses: expenses, income: income, nextId: 100, daily: daily };
   }
 
   function emptyData(){
     var currentKey = getTodayMonthKey();
-    return { version: CURRENT_SCHEMA_VERSION, months: [currentKey], selectedMonth: currentKey, expenses: [], income: [], nextId: 1, daily: { nextId: 1, entries: [], balances: {} } };
+    return { version: CURRENT_SCHEMA_VERSION, months: [currentKey], selectedMonth: currentKey, selectedDiarioMonth: currentKey, expenses: [], income: [], nextId: 1, daily: { nextId: 1, entries: [], balances: {} } };
   }
 
   var state = null;
@@ -430,6 +430,9 @@
     if (!state.selectedMonth) {
       state.selectedMonth = todayKey;
     }
+    if (!state.selectedDiarioMonth || state.months.indexOf(state.selectedDiarioMonth) === -1) {
+      state.selectedDiarioMonth = todayKey;
+    }
     if (!state.daily) {
       state.daily = { nextId: 1, entries: [], balances: {} };
     }
@@ -439,6 +442,10 @@
   }
 
   // --- DIÁRIO (lançamentos do dia a dia) ---
+  function getSelectedDiarioMonth(){
+    return state.selectedDiarioMonth || getTodayMonthKey();
+  }
+
   function sumDailyMonth(monthKey){
     var total = 0, count = 0;
     state.daily.entries.forEach(function(row){
@@ -490,16 +497,25 @@
         state.months.splice(idx, 1);
         state.expenses.forEach(function(e) { delete e.values[mk]; });
         state.income.forEach(function(i) { delete i.values[mk]; });
+        state.daily.entries = state.daily.entries.filter(function(row){ return row.monthKey !== mk; });
+        delete state.daily.balances[mk];
 
         if (state.months.length === 0) {
           var todayKey = getTodayMonthKey();
           state.months.push(todayKey);
           state.selectedMonth = todayKey;
-        } else if (state.selectedMonth === mk) {
-          state.selectedMonth = state.months[Math.max(0, idx - 1)];
+          state.selectedDiarioMonth = todayKey;
+        } else {
+          if (state.selectedMonth === mk) {
+            state.selectedMonth = state.months[Math.max(0, idx - 1)];
+          }
+          if (state.selectedDiarioMonth === mk) {
+            state.selectedDiarioMonth = state.months[Math.max(0, idx - 1)];
+          }
         }
         persist();
         render();
+        renderDiario();
       }
     });
   }
@@ -779,8 +795,58 @@
     });
   }
 
+  function renderDiarioTabs(){
+    var row = document.getElementById('diarioTabsRow');
+    if(!row) return;
+    row.innerHTML = "";
+
+    state.months.forEach(function(mk){
+      var btn = document.createElement('button');
+      btn.className = 'tab' + (mk === getSelectedDiarioMonth() ? ' active' : '');
+      btn.title = monthLabel(mk);
+
+      var labelSpan = document.createElement('span');
+      labelSpan.textContent = monthShort(mk);
+      btn.appendChild(labelSpan);
+
+      var closeBtn = document.createElement('span');
+      closeBtn.className = 'tab-close';
+      closeBtn.innerHTML = '&times;';
+      closeBtn.title = 'Apagar mês';
+      closeBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        removeMonth(mk);
+      });
+      btn.appendChild(closeBtn);
+
+      btn.addEventListener('click', function(){
+        state.selectedDiarioMonth = mk;
+        persist();
+        renderDiario();
+      });
+      row.appendChild(btn);
+    });
+
+    var addBtn = document.createElement('button');
+    addBtn.className = 'tab-add';
+    addBtn.textContent = '+';
+    addBtn.title = 'Adicionar próximo mês';
+    addBtn.addEventListener('click', function(){
+      var last = state.months[state.months.length-1];
+      var nk = nextMonthKey(last);
+      if(state.months.indexOf(nk) === -1){
+        state.months.push(nk);
+      }
+      state.selectedDiarioMonth = nk;
+      persist();
+      renderDiario();
+    });
+    row.appendChild(addBtn);
+  }
+
   function renderDiario(){
-    var mk = getTodayMonthKey();
+    var mk = getSelectedDiarioMonth();
+    renderDiarioTabs();
     ensureDailyBalance(mk);
 
     var exp = sumDailyMonth(mk);
@@ -819,7 +885,7 @@
   }
 
   function renderDiarioTable(){
-    var mk = getTodayMonthKey();
+    var mk = getSelectedDiarioMonth();
     var body = document.getElementById('diarioBody');
     if(!body) return;
     body.innerHTML = "";
@@ -908,7 +974,7 @@
   }
 
   function addDiarioRow(){
-    var mk = getTodayMonthKey();
+    var mk = getSelectedDiarioMonth();
     var id = 'd' + (state.daily.nextId++);
     state.daily.entries.push({ id: id, day: new Date().getDate(), item: '', amount: undefined, monthKey: mk });
     persist();
@@ -928,7 +994,7 @@
   var diarioSaldoAtualInput = document.getElementById('diarioSaldoAtualInput');
   if(diarioSaldoAtualInput){
     diarioSaldoAtualInput.addEventListener('change', function(){
-      var mk = getTodayMonthKey();
+      var mk = getSelectedDiarioMonth();
       ensureDailyBalance(mk);
       var v = parseFloat(diarioSaldoAtualInput.value);
       if(isNaN(v)) v = 0;
