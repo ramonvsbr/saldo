@@ -5,10 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Saldo Simples - controle de contas</title>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">  
-  <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
 
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -146,6 +143,14 @@
             <div class="book-head">
               <h2 class="book-title"><span class="book-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span>Lançamentos</h2>
               <span class="book-total" id="diarioTotalHead">R$ 0,00</span>
+            </div>
+            <div class="date-nav">
+              <div class="date-picker-pill">
+                <button id="btnDiarioDiaAnterior" class="btn-icon" type="button" title="Dia anterior" aria-label="Dia anterior">‹</button>
+                <input type="date" id="diarioDataInput" aria-label="Data dos lançamentos">
+                <button id="btnDiarioDiaProximo" class="btn-icon" type="button" title="Próximo dia" aria-label="Próximo dia">›</button>
+              </div>
+              <button id="btnDiarioDiaHoje" class="btn-hoje" type="button">Hoje</button>
             </div>
             <div class="entry-list" id="diarioBody"></div>
             <button class="add-row-btn" id="addDiarioBtn" type="button"><span class="plus-sym">+</span> adicionar gasto</button>

@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src: url('fonts/PlusJakartaSans.ttf') format('truetype');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* =========================================================
    SALDO SIMPLES — estilos (mesma identidade visual do MAROMBA)
    Direção visual: tema claro, azul-marinho (texto) + amarelo
@@ -245,6 +253,45 @@ svg { display: block; }
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .tab-add:hover { border-color: var(--chalk); background: var(--chalk-soft); }
+
+/* ---------- seletor de data (igual ao da tela Água do Maromba) ---------- */
+.date-nav {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+}
+.book .date-nav { padding: 12px 20px; border-top: 1px solid var(--line-soft); }
+
+.date-picker-pill {
+  display: flex; align-items: center; flex: 1; min-width: 0;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); padding: 3px;
+  transition: border-color 0.2s ease;
+}
+.date-picker-pill:hover,
+.date-picker-pill:focus-within { border-color: var(--line-strong); }
+
+.date-picker-pill .btn-icon {
+  border: none; background: transparent; cursor: pointer;
+  min-height: 40px; width: 40px; padding: 0; flex-shrink: 0;
+  border-radius: var(--radius); color: var(--text-muted); font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+}
+.date-picker-pill .btn-icon:hover { background: var(--surface-2); color: var(--text); }
+
+.date-picker-pill input[type="date"] {
+  flex: 1; min-width: 0; border: none; background: transparent;
+  text-align: center; font-family: inherit; font-weight: 700; font-size: 15px; color: var(--text);
+  padding: 0 6px; min-height: 40px; cursor: pointer;
+}
+.date-picker-pill input[type="date"]:focus { outline: none; }
+
+.btn-hoje {
+  min-height: 48px; padding: 0 18px; border-radius: var(--radius-lg);
+  font-family: inherit; font-size: 13.5px; font-weight: 700;
+  background: var(--surface); border: 1px solid var(--line); color: var(--text);
+  cursor: pointer; transition: all 0.2s ease; white-space: nowrap;
+}
+.btn-hoje:hover { border-color: var(--chalk); background: var(--surface-2); }
+.btn-hoje.is-hoje { display: none; }
 
 /* ---------- blocos de lançamentos ---------- */
 section.book {
@@ -636,6 +683,7 @@ section.book.income .book-total { color: var(--moss); }
   /* campos com 16px evitam o zoom automático do iOS ao focar */
   .field input { font-size: 16px; }
   .entry-day-input, .entry-name-input, .entry-val-input, .stat-value-input { font-size: 16px; }
+  .date-picker-pill input[type="date"] { font-size: 16px; }
 
   /* cartões de resumo lado a lado */
   .stat-strip { --stat-h: 88px; --stat-label-h: 15px; --stat-value-h: 28px; --stat-sub-h: 14px; gap: 8px; }
@@ -653,9 +701,10 @@ section.book.income .book-total { color: var(--moss); }
 
 @media (max-width: 600px) {
   .stat-strip { --stat-h: 68px; --stat-label-h: 14px; --stat-value-h: 24px; }
-  .stat-card { padding: 0 8px; border-radius: 12px; }
+  .stat-card { padding: 0 6px 0 8px; border-radius: 12px; }
   .stat-label { font-size: 11px; }
-  .stat-value, .stat-value-input { font-size: clamp(13px, 4vw, 16px); }
+  .stat-value, .stat-value-input { font-size: clamp(11px, 3.5vw, 16px); letter-spacing: -0.03em; }
+  .stat-card .stat-value { text-overflow: clip; }
   .stat-card .stat-sub { display: none; }
   .stat-card .stat-edit { gap: 4px; }
   .stat-edit .icon-edit { width: 12px; height: 12px; }

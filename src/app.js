@@ -415,6 +415,30 @@
     return state.selectedDiarioMonth || getTodayMonthKey();
   }
 
+  /* ---------- Data selecionada no Diário (dia visualizado) ---------- */
+  function pad2(n){ return n < 10 ? '0' + n : '' + n; }
+  function dateToISO(d){ return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function todayISO(){ return dateToISO(new Date()); }
+  function shiftDateISO(iso, days){
+    var p = iso.split('-');
+    return dateToISO(new Date(parseInt(p[0],10), parseInt(p[1],10) - 1, parseInt(p[2],10) + days));
+  }
+  var diarioData = todayISO();
+  function diarioDay(){ return parseInt(diarioData.slice(8, 10), 10) || 1; }
+
+  function setDiarioData(iso){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) iso = todayISO();
+    var mk = iso.slice(0, 7);
+    if(state.months.indexOf(mk) === -1){
+      state.months.push(mk);
+      state.months.sort();
+    }
+    state.selectedDiarioMonth = mk;
+    diarioData = iso;
+    persist();
+    renderDiario();
+  }
+
   function sumDailyMonth(monthKey){
     var total = 0, count = 0;
     state.daily.entries.forEach(function(row){
@@ -429,6 +453,16 @@
     var exp = sumMonth(state.expenses, monthKey, upToDay);
     var inc = sumMonth(state.income, monthKey, upToDay);
     return inc.total - exp.total;
+  }
+
+  function sumDailyDay(monthKey, day){
+    var total = 0, count = 0;
+    state.daily.entries.forEach(function(row){
+      if(row.monthKey !== monthKey || effectiveDay(row, monthKey) !== day) return;
+      var v = row.amount;
+      if(typeof v === 'number' && !isNaN(v)){ total += v; count++; }
+    });
+    return { total: total, count: count };
   }
 
   function recomputeDailyBalances(){
@@ -864,8 +898,15 @@
 
   function renderDiario(){
     var mk = getSelectedDiarioMonth();
+    // a data visualizada sempre pertence ao mês selecionado nas abas
+    if(diarioData.slice(0, 7) !== mk) diarioData = (mk === getTodayMonthKey()) ? todayISO() : mk + '-01';
     renderDiarioTabs();
     recomputeDailyBalances();
+
+    var dateInput = document.getElementById('diarioDataInput');
+    if(dateInput && document.activeElement !== dateInput) dateInput.value = diarioData;
+    var btnHoje = document.getElementById('btnDiarioDiaHoje');
+    if(btnHoje) btnHoje.classList.toggle('is-hoje', diarioData === todayISO());
 
     var exp = sumDailyMonth(mk);
     var initial = state.daily.balances[mk].initial;
@@ -881,7 +922,7 @@
     if(elExpCount) elExpCount.textContent = exp.count + (exp.count===1?' item':' itens') + ' em ' + monthLabel(mk);
 
     var elHead = document.getElementById('diarioTotalHead');
-    if(elHead) elHead.textContent = fmtMoney(exp.total);
+    if(elHead) elHead.textContent = fmtMoney(sumDailyDay(mk, diarioDay()).total);
 
     var saldoInput = document.getElementById('diarioSaldoAtualInput');
     if(saldoInput && document.activeElement !== saldoInput){
@@ -917,11 +958,11 @@
     if(!container) return;
     container.innerHTML = "";
 
-    var list = state.daily.entries.filter(function(row){ return row.monthKey === mk; })
-      .sort(function(a, b){ return dayValue(a) - dayValue(b); });
+    var day = diarioDay();
+    var list = state.daily.entries.filter(function(row){ return row.monthKey === mk && effectiveDay(row, mk) === day; });
 
     if(list.length === 0){
-      container.appendChild(el('div', 'empty-note', 'Nenhum lançamento ainda neste mês.'));
+      container.appendChild(el('div', 'empty-note', 'Nenhum lançamento neste dia.'));
       return;
     }
 
@@ -959,7 +1000,7 @@
   function addDiarioRow(){
     var mk = getSelectedDiarioMonth();
     var id = 'd' + (state.daily.nextId++);
-    state.daily.entries.push({ id: id, day: (mk === getTodayMonthKey()) ? new Date().getDate() : 1, item: '', amount: undefined, monthKey: mk });
+    state.daily.entries.push({ id: id, day: diarioDay(), item: '', amount: undefined, monthKey: mk });
     persist();
     renderDiario();
     focusLastName('diarioBody');
@@ -974,6 +1015,15 @@
       }
     }, 30);
   }
+
+  var diarioDataInput = document.getElementById('diarioDataInput');
+  if(diarioDataInput) diarioDataInput.addEventListener('change', function(e){ setDiarioData(e.target.value); });
+  var btnDiaHoje = document.getElementById('btnDiarioDiaHoje');
+  if(btnDiaHoje) btnDiaHoje.addEventListener('click', function(){ setDiarioData(todayISO()); });
+  var btnDiaAnt = document.getElementById('btnDiarioDiaAnterior');
+  if(btnDiaAnt) btnDiaAnt.addEventListener('click', function(){ setDiarioData(shiftDateISO(diarioData, -1)); });
+  var btnDiaProx = document.getElementById('btnDiarioDiaProximo');
+  if(btnDiaProx) btnDiaProx.addEventListener('click', function(){ setDiarioData(shiftDateISO(diarioData, 1)); });
 
   var btnAddDiario = document.getElementById('addDiarioBtn');
   if(btnAddDiario) btnAddDiario.addEventListener('click', addDiarioRow);
@@ -992,7 +1042,7 @@
     if(lbl) lbl.textContent = 'Será lançado em ' + monthLabel(mk) + '.';
     if(qValor) qValor.value = '';
     if(qItem) qItem.value = '';
-    if(qDia) qDia.value = (mk === getTodayMonthKey()) ? new Date().getDate() : 1;
+    if(qDia) qDia.value = diarioDay();
     quickOverlay.classList.add('open');
     setTimeout(function(){ if(qValor) qValor.focus(); }, 60);
   }
@@ -1015,7 +1065,7 @@
       }
       var mk = getSelectedDiarioMonth();
       var day = parseInt(qDia.value, 10);
-      if(isNaN(day)) day = (mk === getTodayMonthKey()) ? new Date().getDate() : 1;
+      if(isNaN(day)) day = diarioDay();
       day = Math.max(1, Math.min(lastDayOfMonth(mk), day));
       var id = 'd' + (state.daily.nextId++);
       state.daily.entries.push({ id: id, day: day, item: (qItem.value || '').trim(), amount: cents, monthKey: mk });
