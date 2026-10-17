@@ -306,6 +306,20 @@
     return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
   }
 
+  /* Barras nativas do Android via SystemBars (@capacitor/core 7.1+).
+     O estilo é pelo FUNDO: 'LIGHT' = fundo claro (ícones escuros),
+     'DARK' = fundo escuro (ícones claros). */
+  function sincronizarBarrasSistema(theme){
+    try{
+      var cap = window.Capacitor;
+      var SB = cap && cap.Plugins && cap.Plugins.SystemBars;
+      if(SB && typeof SB.setStyle === 'function'){
+        var r = SB.setStyle({ style: theme === 'dark' ? 'DARK' : 'LIGHT' });
+        if(r && typeof r.catch === 'function') r.catch(function(){});
+      }
+    }catch(e){ /* fora do app nativo: ignora */ }
+  }
+
   function applyTheme(theme){
     document.documentElement.setAttribute('data-theme', theme);
     try{ localStorage.setItem(THEME_STORAGE_KEY, theme); }catch(e){}
@@ -321,6 +335,7 @@
       var label = toggles[i].querySelector('.theme-toggle-label');
       if(label) label.textContent = theme === 'dark' ? 'Modo claro' : 'Modo escuro';
     }
+    sincronizarBarrasSistema(theme);
   }
 
   var themeToggleBtns = document.querySelectorAll('.theme-toggle-btn');
