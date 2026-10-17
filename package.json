@@ -1,0 +1,34 @@
+{
+  "name": "saldosimples",
+  "version": "1.0.0",
+  "description": "O **Saldo Simples** é um web app (PWA) leve, minimalista e responsivo para controle financeiro pessoal. Ele permite acompanhar receitas e despesas mês a mês e visualizar o acumulado anual, com suporte total a funcionamento offline e sincronização em nuvem.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "sync": "node copiar-www.js && npx cap sync android"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ramonvsbr/saldosimples.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ramonvsbr/saldosimples/issues"
+  },
+  "homepage": "https://github.com/ramonvsbr/saldosimples#readme",
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3",
+    "@capacitor/status-bar": "^8.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.3"
+  }
+}

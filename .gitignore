@@ -1,14 +1,24 @@
-# Cloudflare / Wrangler
-.wrangler/
-.wrangler/cache
-.dev.vars
-worker/wrangler.toml
+# dependências (recriadas com npm install)
+node_modules/
 
-# Logs e arquivos do sistema
-*.log
+# cópia gerada pelo npm run sync
+www/
+
+# Android: arquivos gerados e locais
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/captures/
+android/.idea/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/capacitor-cordova-android-plugins/
+
+# assinatura do app: nunca subir
+*.keystore
+*.jks
+
+# sistema
 .DS_Store
 Thumbs.db
-
-# Backups ou exportações locais contendo dados
-*.json.bak
-*.local.sqlite

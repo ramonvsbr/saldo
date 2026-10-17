@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Saldo Simples - controle de contas</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">  
+  <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" id="themeColorMeta" content="#F6F8FC">
+
+  <link rel="stylesheet" href="style.css">
+
+  <script>
+    (function(){
+      try {
+        var saved = localStorage.getItem('saldo_theme');
+        var isDark = saved ? saved === 'dark' : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        var theme = isDark ? 'dark' : 'light';
+        var color = isDark ? '#14213D' : '#F6F8FC';
+
+        document.documentElement.setAttribute('data-theme', theme);
+
+        var meta = document.getElementById('themeColorMeta');
+        if (meta) meta.setAttribute('content', color);
+      } catch(e){}
+    })();
+  </script>
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="sidebar">
+      <div class="sidebar-brand">
+        <div>
+          <span class="brand-word">SALDO SIMPLES</span>
+          <span class="brand-tag">suas contas, sem complicação</span>
+        </div>
+      </div>
+      <div class="sidebar-nav bottom-nav">
+        <button aria-label="Mensal" title="Mensal" class="nav-btn nav-item view-trigger" data-view="mensal">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 2.5v4M16 2.5v4"/></svg>
+          <span class="nav-label">Mensal</span>
+        </button>
+        <button aria-label="Diário" title="Diário" class="nav-btn nav-item view-trigger nav-home-center active" data-view="diario">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          <span class="nav-label">Diário</span>
+        </button>
+        <button aria-label="Anual" title="Anual" class="nav-btn nav-item view-trigger" data-view="anual">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M5 20v-8M12 20V6M19 20v-5M3 20.5h18"/></svg>
+          <span class="nav-label">Anual</span>
+        </button>
+      </div>
+      <div class="sidebar-footer">
+        <button class="nav-btn-config theme-toggle theme-toggle-btn" id="btnTema" type="button" aria-label="Alternar tema claro/escuro" aria-pressed="false">
+          <svg class="icon icon-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+          <svg class="icon icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <span class="theme-toggle-label">Modo escuro</span>
+        </button>
+        <button class="nav-btn-config" id="btnConfig" type="button" aria-label="Ajustes">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.55V19.6a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.98 18a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87A1.7 1.7 0 0 0 3.07 12.5H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.65 7.4a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 3.04a1.7 1.7 0 0 0 1.03-1.55V1.4a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.02 3a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.35 7.4c.29.63.9 1.05 1.58 1.1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg>
+          <span>Ajustes</span>
+        </button>
+      </div>
+    </nav>
+
+    <main class="main">
+      <div class="wrap" id="app">
+        <header class="top-bar">
+          <div class="top-bar-title">
+            <h1 id="pageTitle">Controle diário</h1>
+          </div>
+        </header>
+
+        <!-- VIEW MENSAL -->
+        <div id="viewMensal" style="display:none;">
+          <div class="tabs-row" id="tabsRow"></div>
+
+          <div class="stat-strip">
+            <div class="stat-card despesas">
+              <span class="stat-label">Despesas</span>
+              <span class="stat-value" id="statDespesas">R$ 0,00</span>
+              <span class="stat-sub" id="statDespesasCount">0 itens</span>
+            </div>
+            <div class="stat-card receitas">
+              <span class="stat-label">Receitas</span>
+              <span class="stat-value" id="statReceitas">R$ 0,00</span>
+              <span class="stat-sub" id="statReceitasCount">0 itens</span>
+            </div>
+            <div class="stat-card saldo">
+              <span class="stat-label">Saldo final</span>
+              <span class="stat-value" id="statSaldo">R$ 0,00</span>
+              <span class="stat-sub" id="statSaldoSub">&nbsp;</span>
+            </div>
+          </div>
+
+          <section class="book expenses">
+            <div class="book-head">
+              <h2 class="book-title"><span class="book-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span>Despesas</h2>
+              <span class="book-total" id="expTotalHead">R$ 0,00</span>
+            </div>
+            <div class="entry-list" id="expensesBody"></div>
+            <button class="add-row-btn" id="addExpenseBtn" type="button"><span class="plus-sym">+</span> adicionar despesa</button>
+          </section>
+
+          <section class="book income">
+            <div class="book-head">
+              <h2 class="book-title"><span class="book-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></span>Receitas</h2>
+              <span class="book-total" id="incTotalHead">R$ 0,00</span>
+            </div>
+            <div class="entry-list" id="incomeBody"></div>
+            <button class="add-row-btn" id="addIncomeBtn" type="button"><span class="plus-sym">+</span> adicionar receita</button>
+          </section>
+        </div>
+
+        <!-- VIEW DIÁRIO -->
+        <div id="viewDiario">
+          <div class="tabs-row" id="diarioTabsRow"></div>
+
+          <div class="stat-strip">
+            <div class="stat-card despesas">
+              <span class="stat-label">Despesas</span>
+              <span class="stat-value" id="diarioDespesas">R$ 0,00</span>
+              <span class="stat-sub" id="diarioDespesasCount">0 itens</span>
+            </div>
+            <div class="stat-card saldo">
+              <span class="stat-label">Saldo atual</span>
+              <label class="stat-value stat-edit" for="diarioSaldoAtualInput" title="Clique para editar o saldo atual">
+                <input type="number" step="0.01" class="stat-value-input" id="diarioSaldoAtualInput" aria-label="Saldo atual (editável)">
+                <svg class="icon icon-edit" viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              </label>
+              <span class="stat-sub" id="diarioSaldoAtualSub">&nbsp;</span>
+            </div>
+            <div class="stat-card saldo">
+              <span class="stat-label">Projetado</span>
+              <span class="stat-value" id="diarioSaldoFinal">R$ 0,00</span>
+              <span class="stat-sub" id="diarioSaldoFinalSub">&nbsp;</span>
+            </div>
+          </div>
+
+          <section class="book expenses">
+            <div class="book-head">
+              <h2 class="book-title"><span class="book-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span>Lançamentos</h2>
+              <span class="book-total" id="diarioTotalHead">R$ 0,00</span>
+            </div>
+            <div class="entry-list" id="diarioBody"></div>
+            <button class="add-row-btn" id="addDiarioBtn" type="button"><span class="plus-sym">+</span> adicionar gasto</button>
+          </section>
+        </div>
+
+        <!-- VIEW ANUAL -->
+        <div id="viewAnual" style="display:none;">
+          <div class="tabs-row" id="anualTabs"></div>
+
+          <div class="stat-strip">
+            <div class="stat-card despesas">
+              <span class="stat-label">Despesas (geral)</span>
+              <span class="stat-value" id="geralDespesas">R$ 0,00</span>
+              <span class="stat-sub">todos os anos</span>
+            </div>
+            <div class="stat-card receitas">
+              <span class="stat-label">Receitas (geral)</span>
+              <span class="stat-value" id="geralReceitas">R$ 0,00</span>
+              <span class="stat-sub">todos os anos</span>
+            </div>
+            <div class="stat-card saldo">
+              <span class="stat-label">Saldo geral</span>
+              <span class="stat-value" id="geralSaldo">R$ 0,00</span>
+              <span class="stat-sub" id="geralSaldoSub">&nbsp;</span>
+            </div>
+          </div>
+
+          <div class="year-carousel" id="anualYears"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <input type="file" id="importFile" accept="application/json" style="display:none">
+
+  <!-- Modal Ajustes -->
+  <div class="modal-overlay" id="configOverlay">
+    <div class="modal-card modal-card-lg" role="dialog" aria-modal="true" aria-labelledby="configTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="configTitle">Ajustes</h2>
+        <button class="modal-close" id="btnCloseConfig" type="button" aria-label="Fechar">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="hint">Backup e restauração dos seus dados, salvos somente neste aparelho.</p>
+      <p class="hint backup-ultimo" id="backupInfo"></p>
+      <div class="backup-actions">
+        <button class="btn btn-accent action-export" type="button">Exportar backup (.json)</button>
+        <button class="btn btn-ghost action-import" type="button">Importar backup (.json)</button>
+      </div>
+      <p class="hint backup-note">Importar um arquivo <strong>substitui</strong> todos os dados atuais deste aparelho.</p>
+      <h3 class="subtitle">Dados de exemplo</h3>
+      <div class="backup-actions">
+        <button class="btn btn-ghost btn-small" id="resetBtn" type="button">Carregar exemplo</button>
+        <button class="btn btn-danger btn-small" id="clearBtn" type="button">Limpar tudo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Botão Flutuante + Gasto Rápido -->
+  <button class="fab" id="fabQuick" type="button" aria-label="Lançar gasto rápido" title="Lançar gasto rápido">
+    <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+
+  <div class="modal-overlay" id="quickOverlay">
+    <form class="modal-card modal-card-lg" id="quickForm" role="dialog" aria-modal="true" aria-labelledby="quickTitle" novalidate>
+      <div class="modal-header">
+        <h2 class="modal-title" id="quickTitle">Novo gasto</h2>
+        <button class="modal-close" id="btnCloseQuick" type="button" aria-label="Fechar">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="hint" id="quickMonthLabel"></p>
+      <label class="field"><span>Valor (R$)</span><input id="qValor" class="field-money" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00"></label>
+      <label class="field"><span>Descrição</span><input id="qItem" type="text" autocomplete="off" placeholder="Ex.: padaria"></label>
+      <label class="field field-small"><span>Dia</span><input id="qDia" type="number" min="1" max="31" inputmode="numeric"></label>
+      <div class="backup-actions">
+        <button class="btn btn-accent" type="submit">Lançar gasto</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="save-flag" id="saveFlag">salvo ✓</div>
+
+  <!-- Modal de Confirmação -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h3 class="modal-title" id="modalTitle"></h3>
+      <p class="modal-message" id="modalMessage"></p>
+      <div class="modal-actions" id="modalActions"></div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toastStack"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
