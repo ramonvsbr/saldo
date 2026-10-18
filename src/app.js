@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  var STORAGE_KEY = "livro-caixa-dados-v2";
-  var INVALID_KEY = "livro-caixa-dados-v2-invalido";
+  var STORAGE_KEY = "saldo-dados";
+  var INVALID_KEY = "saldo-dados-invalido";
   var CURRENT_SCHEMA_VERSION = 3;
   var MONTH_NAMES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
   var CAL_SVG = '<svg class="icon" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 2.5v4M16 2.5v4"/></svg>';
@@ -1269,7 +1269,7 @@
   var btnClear = document.getElementById('clearBtn');
   if(btnClear) {
     btnClear.addEventListener('click', function(){
-      showConfirm('Certeza de que deseja limpar todos os registros e começar um livro-caixa em branco?', { title: 'Limpar tudo', confirmLabel: 'Limpar', danger: true }).then(function(ok){
+      showConfirm('Certeza de que deseja limpar todos os registros e começar do zero?', { title: 'Limpar tudo', confirmLabel: 'Limpar', danger: true }).then(function(ok){
         if(!ok) return;
         state = emptyData();
         marcarBoasVindas();

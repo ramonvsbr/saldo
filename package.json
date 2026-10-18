@@ -9,16 +9,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ramonvsbr/saldosimples.git"
+    "url": "git+https://github.com/ramonvsbr/saldo.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/ramonvsbr/saldosimples/issues"
+    "url": "https://github.com/ramonvsbr/saldo/issues"
   },
-  "homepage": "https://github.com/ramonvsbr/saldosimples#readme",
+  "homepage": "https://github.com/ramonvsbr/saldo#readme",
   "dependencies": {
     "@capacitor/android": "^8.5.3",
     "@capacitor/app": "^8.1.2",
