@@ -7,7 +7,7 @@
 }
 
 /* =========================================================
-   SALDO SIMPLES — estilos (mesma identidade visual do MAROMBA)
+   SALDO — estilos (mesma identidade visual do MAROMBA)
    Direção visual: tema claro, azul-marinho (texto) + amarelo
    magnésio (ações). Cantos arredondados, cartões brancos.
 
@@ -757,3 +757,106 @@ section.book.income .book-total { color: var(--moss); }
 }
 :root[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
 :root[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
+
+/* ---------- Pagamento (chip) e avisos de vencimento ---------- */
+.chip-badge.chip-paid.paid {
+  background: var(--moss-soft); border-color: var(--moss); color: var(--moss); font-weight: 700;
+}
+.chip-badge.chip-paid.late {
+  background: var(--oxide-soft); border-color: var(--oxide); color: var(--oxide); font-weight: 700;
+}
+
+.notif-switch {
+  position: relative;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 12px 0; cursor: pointer;
+}
+.notif-switch-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.notif-switch-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.notif-switch-sub { font-size: 13px; color: var(--text-muted); }
+.notif-switch input { position: absolute; right: 0; top: 50%; width: 48px; height: 28px; margin: -14px 0 0; opacity: 0; cursor: pointer; }
+.switch-ui {
+  position: relative; flex-shrink: 0; width: 48px; height: 28px; border-radius: 14px;
+  background: var(--surface-3); border: 1px solid var(--line-strong);
+  transition: background .15s ease, border-color .15s ease;
+}
+.switch-ui::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--text-muted); transition: transform .15s ease, background .15s ease;
+}
+.notif-switch input:checked + .switch-ui { background: var(--chalk); border-color: var(--chalk); }
+.notif-switch input:checked + .switch-ui::after { transform: translateX(20px); background: var(--chalk-ink); }
+.notif-switch input:focus-visible + .switch-ui { outline: 2px solid var(--chalk-text); outline-offset: 2px; }
+.notif-switch input:disabled { cursor: not-allowed; }
+.notif-switch input:disabled + .switch-ui { opacity: .4; }
+
+.notif-options { border-top: 1px solid var(--line-soft); margin-top: 4px; padding-top: 14px; }
+.notif-options[hidden], .notif-warn[hidden] { display: none; }
+.notif-label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+.opt-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.opt-chip { position: relative; cursor: pointer; }
+.opt-chip input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.opt-chip span {
+  display: inline-flex; align-items: center; min-height: var(--btn-h-sm); padding: 0 14px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2);
+  font-size: 13px; font-weight: 600; color: var(--text-muted);
+  transition: background .15s ease, border-color .15s ease;
+}
+.opt-chip input:checked + span { background: var(--chalk-soft); border-color: var(--chalk); color: var(--text); font-weight: 700; }
+.opt-chip input:focus-visible + span { outline: 2px solid var(--chalk-text); outline-offset: 2px; }
+.notif-time input { max-width: 160px; }
+.notif-warn {
+  margin: 8px 0 0; padding: 10px 12px; font-size: 13px; color: var(--text);
+  background: var(--oxide-soft); border: 1px solid var(--oxide); border-radius: var(--radius);
+}
+
+/* =========================================================
+   Lembrete de backup, boas-vindas e máscara de valores
+   ========================================================= */
+.aviso {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  background: var(--chalk-soft); border: 1px solid var(--chalk);
+  border-radius: var(--radius-lg); padding: 12px 16px; margin-bottom: var(--gap-block);
+}
+.aviso[hidden] { display: none !important; }
+.aviso-text { margin: 0; flex: 1 1 200px; font-size: 13px; font-weight: 600; color: var(--text); }
+.aviso-actions { display: flex; gap: 8px; }
+.backup-ultimo.atrasado { color: var(--oxide); font-weight: 700; }
+.entry-val-input { min-width: 56px; max-width: 130px; }
+@media (max-width: 500px) {
+  .aviso-actions { width: 100%; }
+  .aviso-actions .btn { flex: 1; }
+}
+
+/* =========================================================
+   Cartão de lançamento (Mensal e Diário) — layout único:
+     [ DIA ]  Nome
+              chips (paga / parcela / recorrente)
+              .......................  R$ valor  [lixeira]
+   O DIA ocupa a coluna da esquerda, de cima a baixo; tudo o mais
+   fica alinhado na coluna da direita.
+   ========================================================= */
+.entry-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  column-gap: 12px; row-gap: 8px;
+  align-items: start;
+}
+.entry-day-badge { grid-column: 1; grid-row: 1 / span 2; align-self: start; }
+.entry-main { grid-column: 2; grid-row: 1; min-width: 0; flex: none; gap: 6px; }
+.entry-right { grid-column: 2; grid-row: 2; justify-self: end; margin-left: 0; }
+.entry-name-input { min-height: 24px !important; line-height: 24px; }
+/* =========================================================
+   Pop-up de boas-vindas e destaque do primeiro passo
+   ========================================================= */
+.welcome-step { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font-size: 15px; font-weight: 800; color: var(--text); }
+.welcome-num {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  background: var(--chalk); color: var(--chalk-ink);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800;
+}
+#welcomeForm .field { margin: 14px 0 16px; }
+#welcomeForm .field input { font-size: 22px; }
+.welcome-alt { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.welcome-alt .btn { flex: 1 1 auto; }
+.stat-card.needs-saldo { border-color: var(--chalk); box-shadow: 0 0 0 3px var(--chalk-soft); }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Saldo Simples - controle de contas</title>
+  <title>Saldo - controle de contas</title>
 
   <link rel="icon" type="image/x-icon" href="favicon.ico">
 
@@ -34,7 +34,7 @@
     <nav class="sidebar">
       <div class="sidebar-brand">
         <div>
-          <span class="brand-word">SALDO SIMPLES</span>
+          <span class="brand-word">SALDO</span>
           <span class="brand-tag">suas contas, sem complicação</span>
         </div>
       </div>
@@ -116,6 +116,14 @@
 
         <!-- VIEW DIÁRIO -->
         <div id="viewDiario">
+          <div class="aviso aviso-backup" id="avisoBackup" role="status" hidden>
+            <p class="aviso-text" id="avisoBackupText"></p>
+            <div class="aviso-actions">
+              <button class="btn btn-accent btn-small" id="avisoBackupFazer" type="button">Fazer backup</button>
+              <button class="btn btn-ghost btn-small" id="avisoBackupDepois" type="button">Depois</button>
+            </div>
+          </div>
+
           <div class="tabs-row" id="diarioTabsRow"></div>
 
           <div class="stat-strip">
@@ -127,7 +135,7 @@
             <div class="stat-card saldo">
               <span class="stat-label">Saldo atual</span>
               <label class="stat-value stat-edit" for="diarioSaldoAtualInput" title="Clique para editar o saldo atual">
-                <input type="number" step="0.01" class="stat-value-input" id="diarioSaldoAtualInput" aria-label="Saldo atual (editável)">
+                <input type="text" inputmode="decimal" autocomplete="off" class="stat-value-input" id="diarioSaldoAtualInput" aria-label="Saldo atual (editável)">
                 <svg class="icon icon-edit" viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
               </label>
               <span class="stat-sub" id="diarioSaldoAtualSub">&nbsp;</span>
@@ -203,6 +211,37 @@
         <button class="btn btn-ghost action-import" type="button">Importar backup (.json)</button>
       </div>
       <p class="hint backup-note">Importar um arquivo <strong>substitui</strong> todos os dados atuais deste aparelho.</p>
+      <h3 class="subtitle">Avisos de vencimento</h3>
+      <p class="hint">Receba na barra de notificações do celular um aviso das contas do Mensal que estão para vencer.</p>
+      <label class="notif-switch" for="notifOn">
+        <span class="notif-switch-text">
+          <span class="notif-switch-title">Avisar vencimentos</span>
+          <span class="notif-switch-sub" id="notifStatus">Desligado.</span>
+        </span>
+        <input type="checkbox" id="notifOn" role="switch">
+        <span class="switch-ui" aria-hidden="true"></span>
+      </label>
+      <p class="notif-warn" id="notifDenied" hidden>As notificações estão bloqueadas para o Saldo. Para receber os avisos, libere em Configurações do Android &gt; Apps &gt; Saldo &gt; Notificações.</p>
+      <div class="notif-options" id="notifOptions" hidden>
+        <span class="notif-label" id="notifLeadsLabel">Quando avisar</span>
+        <div class="opt-row" id="notifLeads" role="group" aria-labelledby="notifLeadsLabel">
+          <label class="opt-chip"><input type="checkbox" value="3"><span>3 dias antes</span></label>
+          <label class="opt-chip"><input type="checkbox" value="1"><span>1 dia antes</span></label>
+          <label class="opt-chip"><input type="checkbox" value="0"><span>No dia</span></label>
+        </div>
+        <label class="field notif-time"><span>Horário do aviso</span><input type="time" id="notifTime" value="09:00"></label>
+        <label class="notif-switch" for="notifIncome">
+          <span class="notif-switch-text">
+            <span class="notif-switch-title">Incluir receitas</span>
+            <span class="notif-switch-sub">Avisa também o dia de receber.</span>
+          </span>
+          <input type="checkbox" id="notifIncome" role="switch">
+          <span class="switch-ui" aria-hidden="true"></span>
+        </label>
+        <div class="backup-actions">
+          <button class="btn btn-ghost btn-small" id="notifTest" type="button">Testar notificação</button>
+        </div>
+      </div>
       <h3 class="subtitle">Dados de exemplo</h3>
       <div class="backup-actions">
         <button class="btn btn-ghost btn-small" id="resetBtn" type="button">Carregar exemplo</button>
@@ -234,6 +273,22 @@
     </form>
   </div>
 
+  <!-- Pop-up de boas-vindas (primeiro uso) -->
+  <div class="modal-overlay" id="welcomeOverlay">
+    <form class="modal-card" id="welcomeForm" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle" novalidate>
+      <h2 class="modal-title" id="welcomeTitle">Bem-vindo ao Saldo</h2>
+      <p class="welcome-step"><span class="welcome-num">1</span>Primeiro passo: informe quanto você tem hoje</p>
+      <p class="hint">É o ponto de partida: o app calcula o resto a partir desse valor. Se estiver no negativo, comece com -. Seus dados ficam só neste aparelho.</p>
+      <label class="field"><span>Saldo atual (R$)</span><input id="wSaldo" class="field-money" type="text" inputmode="text" autocomplete="off" placeholder="0,00"></label>
+      <button class="btn btn-accent" type="submit">Salvar e começar</button>
+      <div class="welcome-alt">
+        <button class="btn btn-ghost btn-small" id="boasExemplo" type="button">Carregar exemplo</button>
+        <button class="btn btn-ghost btn-small" id="boasBackup" type="button">Já tenho um backup</button>
+        <button class="btn btn-ghost btn-small" id="boasPular" type="button">Pular por enquanto</button>
+      </div>
+    </form>
+  </div>
+
   <div class="save-flag" id="saveFlag">salvo ✓</div>
 
   <!-- Modal de Confirmação -->
@@ -247,6 +302,7 @@
 
   <div class="toast-stack" id="toastStack"></div>
 
+  <script src="notificacoes.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

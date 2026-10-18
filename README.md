@@ -1,6 +1,6 @@
 <div align="center">
 
-# 💰 Saldo Simples
+# 💰 Saldo
 
 ### Receitas, despesas e gastos do dia num app só. 100% offline, 100% seu.
 
@@ -24,11 +24,11 @@
 ---
 
 > [!NOTE]
-> O Saldo Simples é **somente Android**. A versão web/PWA, o login e a sincronização em nuvem foram descontinuados.
+> O Saldo é **somente Android**. A versão web/PWA, o login e a sincronização em nuvem foram descontinuados.
 
 ## 📖 Sobre
 
-O **Saldo Simples** é um app de controle financeiro pessoal pensado para quem quer praticidade e privacidade. Ele funciona inteiramente no aparelho: não precisa de login, não envia nada para a nuvem e não depende de conexão.
+O **Saldo** é um app de controle financeiro pessoal pensado para quem quer praticidade e privacidade. Ele funciona inteiramente no aparelho: não precisa de login, não envia nada para a nuvem e não depende de conexão.
 
 Feito com **JavaScript, HTML e CSS puros**, empacotado como APK com **Capacitor**.
 
@@ -158,7 +158,7 @@ Se criar arquivos ou pastas novos que o app use, inclua-os no `copiar-www.js`.
 ### 📁 Estrutura do projeto
 
 ```
-saldo-simples/
+saldo/
 ├── src/                     # fontes do app (index.html, style.css, app.js e fonts/)
 ├── resources/icon.png       # ícone do app
 ├── android/                 # projeto Android gerado pelo Capacitor

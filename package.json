@@ -1,7 +1,7 @@
 {
-  "name": "saldosimples",
+  "name": "saldo",
   "version": "1.0.0",
-  "description": "O **Saldo Simples** é um web app (PWA) leve, minimalista e responsivo para controle financeiro pessoal. Ele permite acompanhar receitas e despesas mês a mês e visualizar o acumulado anual, com suporte total a funcionamento offline e sincronização em nuvem.",
+  "description": "O **Saldo** é um web app (PWA) leve, minimalista e responsivo para controle financeiro pessoal. Ele permite acompanhar receitas e despesas mês a mês e visualizar o acumulado anual, com suporte total a funcionamento offline e sincronização em nuvem.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -24,6 +24,7 @@
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.5.3",
     "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/local-notifications": "^8.3.1",
     "@capacitor/share": "^8.0.3",
     "@capacitor/status-bar": "^8.0.4"
   },

@@ -82,6 +82,38 @@
     return parseCents(s);
   }
 
+  /* Máscara de valores: fora de foco "1.234,56"; em foco "1234,56" */
+  function fmtPlain(cents){
+    return ((cents || 0) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function centsToEdit(cents){
+    if(typeof cents !== 'number' || isNaN(cents)) return '';
+    var a = Math.abs(cents);
+    return (cents < 0 ? '-' : '') + Math.floor(a / 100) + ',' + (a % 100 < 10 ? '0' : '') + (a % 100);
+  }
+
+  /* Preferências só deste aparelho (não entram no backup) */
+  var BACKUP_KEY = 'saldo_ultimo_backup';
+  var BACKUP_SNOOZE_KEY = 'saldo_backup_adiado';
+  var WELCOME_KEY = 'saldo_boas_vindas_ok';
+  var DAY_MS = 86400000;
+  var BACKUP_LATE_DAYS = 14;
+  var BACKUP_SNOOZE_DAYS = 3;
+
+  function lsGetInt(k){ try{ return parseInt(localStorage.getItem(k), 10) || null; }catch(e){ return null; } }
+  function lsSet(k, v){ try{ localStorage.setItem(k, String(v)); }catch(e){} }
+
+  function nativePlugin(name){
+    try{
+      var cap = window.Capacitor;
+      return (cap && cap.Plugins && cap.Plugins[name]) || null;
+    }catch(e){ return null; }
+  }
+  function isNativeApp(){
+    try{ return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()); }
+    catch(e){ return false; }
+  }
+
   function migrateData(d){
     if(!d || typeof d !== 'object') return null;
     var v = (typeof d.version === 'number') ? d.version : 1;
@@ -352,6 +384,7 @@
     saveTimer = setTimeout(function(){
       storageSet(STORAGE_KEY, JSON.stringify(state)).then(function(ok){
         if(ok) flagSave();
+        if(window.SaldoNotif) window.SaldoNotif.refresh();
       }).catch(function(err){ console.error("Erro ao salvar localmente:", err); });
     }, 250);
   }
@@ -507,7 +540,7 @@
       var idx = state.months.indexOf(mk);
       if (idx > -1) {
         state.months.splice(idx, 1);
-        state.expenses.forEach(function(e) { delete e.values[mk]; });
+        state.expenses.forEach(function(e) { delete e.values[mk]; if(e.paid) delete e.paid[mk]; });
         state.income.forEach(function(i) { delete i.values[mk]; });
         state.daily.entries = state.daily.entries.filter(function(row){ return row.monthKey !== mk; });
         delete state.daily.balances[mk];
@@ -719,12 +752,36 @@
     var valWrap = el('div', 'entry-val-wrap');
     valWrap.appendChild(el('span', 'entry-val-symbol', 'R$'));
     var valInput = el('input', 'entry-val-input');
-    valInput.type = 'number';
-    valInput.step = '0.01';
+    valInput.type = 'text';
+    valInput.setAttribute('inputmode', 'decimal');
+    valInput.setAttribute('autocomplete', 'off');
     valInput.placeholder = '0,00';
     valInput.setAttribute('aria-label', 'Valor em reais');
-    valInput.value = (typeof cfg.valueCents === 'number' && !isNaN(cfg.valueCents)) ? centsToInput(cfg.valueCents) : '';
-    valInput.addEventListener('change', function(){ cfg.onValue(parseCents(valInput.value)); });
+    var curCents = (typeof cfg.valueCents === 'number' && !isNaN(cfg.valueCents)) ? cfg.valueCents : null;
+    function sizeVal(){ valInput.style.width = (Math.max(valInput.value.length, 4) + 1) + 'ch'; }
+    function showVal(){ valInput.value = (curCents === null) ? '' : fmtPlain(curCents); sizeVal(); }
+    showVal();
+    valInput.addEventListener('focus', function(){
+      valInput.value = (curCents === null) ? '' : centsToEdit(curCents);
+      sizeVal();
+      setTimeout(function(){ try{ valInput.select(); }catch(e){} }, 0);
+    });
+    valInput.addEventListener('input', sizeVal);
+    valInput.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); valInput.blur(); } });
+    valInput.addEventListener('blur', function(){
+      var txt = valInput.value.trim();
+      if(txt === ((curCents === null) ? '' : centsToEdit(curCents))){ showVal(); return; }
+      if(txt === ''){ curCents = null; showVal(); cfg.onValue(null); return; }
+      var parsed = parseCentsText(txt);
+      if(parsed === null){
+        showToast('Valor inválido. Use o formato 18,50.', 'error');
+        showVal();
+        return;
+      }
+      curCents = parsed;
+      showVal();
+      cfg.onValue(parsed);
+    });
     valWrap.appendChild(valInput);
     right.appendChild(valWrap);
 
@@ -740,12 +797,44 @@
     return item;
   }
 
+  /* Situação de pagamento de uma despesa no mês aberto:
+     paid = marcada como paga; late = mês atual, dia já passou e não paga; open = a pagar.
+     O "paga" fica em row.paid = { "AAAA-MM": true } (por mês, para itens recorrentes). */
+  function paidStatus(row, mk){
+    if(row.paid && row.paid[mk]) return 'paid';
+    if(mk === getTodayMonthKey() && row.day !== null && row.day !== undefined && !isNaN(row.day)
+       && effectiveDay(row, mk) < new Date().getDate()) return 'late';
+    return 'open';
+  }
+
+  function buildPaidChip(row){
+    var mk = state.selectedMonth;
+    var st = paidStatus(row, mk);
+    var label = st === 'paid' ? '✓ paga' : (st === 'late' ? 'atrasada' : 'a pagar');
+    var chip = el('button', 'chip-badge chip-paid ' + st, label);
+    chip.type = 'button';
+    chip.setAttribute('aria-pressed', st === 'paid' ? 'true' : 'false');
+    chip.title = st === 'paid' ? 'Paga em ' + monthLabel(mk) + '. Toque para desmarcar.' : 'Toque para marcar como paga em ' + monthLabel(mk) + '.';
+    chip.addEventListener('click', function(){
+      if(!row.paid) row.paid = {};
+      if(row.paid[mk]) delete row.paid[mk]; else row.paid[mk] = true;
+      persist();
+      renderTable('expenses');
+    });
+    return chip;
+  }
+
   /* Tipos de item (mutuamente exclusivos):
      - recorrente (∞): copiado para os próximos meses; a caixa de parcelas fica escondida
      - parcelado: tem nº de parcelas > 1; o botão ∞ fica escondido
      - avulso: só no mês atual; mostra a caixa de parcelas e o ∞ (desmarcado) lado a lado */
   function buildTags(row, kind){
     var tags = el('div', 'entry-tags');
+
+    if(kind === 'expenses'){
+      var monthVal = row.values && row.values[state.selectedMonth];
+      if(typeof monthVal === 'number' && !isNaN(monthVal)) tags.appendChild(buildPaidChip(row));
+    }
 
     var instTotal = row.instTotal || 1;
     var instStart = row.instStart || state.selectedMonth;
@@ -911,6 +1000,8 @@
     });
   }
 
+  var saldoAtualCents = 0;
+
   function renderDiario(){
     var mk = getSelectedDiarioMonth();
     // a data visualizada sempre pertence ao mês selecionado nas abas
@@ -940,8 +1031,9 @@
     if(elHead) elHead.textContent = fmtMoney(sumDailyDay(mk, diarioDay()).total);
 
     var saldoInput = document.getElementById('diarioSaldoAtualInput');
+    saldoAtualCents = saldoAtual;
     if(saldoInput && document.activeElement !== saldoInput){
-      saldoInput.value = centsToInput(saldoAtual);
+      saldoInput.value = fmtMoney(saldoAtual);
     }
     if(saldoInput){
       saldoInput.classList.toggle('pos', saldoAtual >= 0);
@@ -955,6 +1047,12 @@
       else elAtualSub.textContent = 'inclui o Mensal até o dia ' + cutoff;
     }
 
+    // primeiro passo pendente: destaca o cartão do saldo atual
+    var cardSaldo = saldoInput ? saldoInput.closest('.stat-card') : null;
+    var precisaSaldo = welcomePending();
+    if(cardSaldo) cardSaldo.classList.toggle('needs-saldo', precisaSaldo);
+    if(precisaSaldo && elAtualSub) elAtualSub.textContent = 'Toque aqui: informe seu saldo';
+
     var elFinal = document.getElementById('diarioSaldoFinal');
     if(elFinal){
       elFinal.textContent = fmtMoney(projetado);
@@ -964,6 +1062,8 @@
     var elFinalSub = document.getElementById('diarioSaldoFinalSub');
     if(elFinalSub) elFinalSub.textContent = 'com todo o Mensal de ' + monthLabel(mk);
 
+    renderAvisoBackup();
+    renderBoasVindas();
     renderDiarioTable();
   }
 
@@ -1093,16 +1193,39 @@
 
   var diarioSaldoAtualInput = document.getElementById('diarioSaldoAtualInput');
   if(diarioSaldoAtualInput){
-    diarioSaldoAtualInput.addEventListener('change', function(){
+    var cardSaldoEl = diarioSaldoAtualInput.closest('.stat-card');
+    if(cardSaldoEl) cardSaldoEl.addEventListener('click', function(e){
+      if(e.target !== diarioSaldoAtualInput) diarioSaldoAtualInput.focus();
+    });
+    diarioSaldoAtualInput.addEventListener('focus', function(){
+      diarioSaldoAtualInput.value = centsToEdit(saldoAtualCents);
+      setTimeout(function(){ try{ diarioSaldoAtualInput.select(); }catch(e){} }, 0);
+    });
+    diarioSaldoAtualInput.addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){ e.preventDefault(); diarioSaldoAtualInput.blur(); }
+    });
+    diarioSaldoAtualInput.addEventListener('blur', function(){
+      var txt = diarioSaldoAtualInput.value.trim();
+      // vazio ou igual ao atual: não altera nada
+      if(txt === '' || txt === centsToEdit(saldoAtualCents)){
+        diarioSaldoAtualInput.value = fmtMoney(saldoAtualCents);
+        return;
+      }
+      var v = parseCentsText(txt);
+      if(v === null){
+        showToast('Valor inválido. Use o formato 1234,56.', 'error');
+        diarioSaldoAtualInput.value = fmtMoney(saldoAtualCents);
+        return;
+      }
       var mk = getSelectedDiarioMonth();
       recomputeDailyBalances();
-      var v = parseCents(diarioSaldoAtualInput.value);
-      if(v === null) v = 0;
       var expTotal = sumDailyMonth(mk).total;
       var mensalCaido = mensalSaldoFor(mk, mensalCutoffDay(mk));
       state.daily.balances[mk] = { initial: v + expTotal - mensalCaido, manual: true };
+      marcarBoasVindas();
       persist();
       renderDiario();
+      diarioSaldoAtualInput.value = fmtMoney(saldoAtualCents);
     });
   }
 
@@ -1121,16 +1244,24 @@
   var btnAddIncome = document.getElementById('addIncomeBtn');
   if(btnAddIncome) btnAddIncome.addEventListener('click', function(){ addRow('income'); });
 
+  function marcarBoasVindas(){ lsSet(WELCOME_KEY, '1'); }
+
+  function loadExample(){
+    state = seedData();
+    ensureCurrentMonthSelected();
+    marcarBoasVindas();
+    diarioData = todayISO();
+    persist();
+    render();
+    renderDiario();
+  }
+
   var btnReset = document.getElementById('resetBtn');
   if(btnReset) {
     btnReset.addEventListener('click', function(){
       showConfirm('Isso vai carregar os dados genéricos de exemplo. Deseja continuar?', { title: 'Carregar exemplo', confirmLabel: 'Carregar' }).then(function(ok){
         if(!ok) return;
-        state = seedData();
-        ensureCurrentMonthSelected();
-        persist();
-        render();
-        renderDiario();
+        loadExample();
       });
     });
   }
@@ -1141,6 +1272,7 @@
       showConfirm('Certeza de que deseja limpar todos os registros e começar um livro-caixa em branco?', { title: 'Limpar tudo', confirmLabel: 'Limpar', danger: true }).then(function(ok){
         if(!ok) return;
         state = emptyData();
+        marcarBoasVindas();
         persist();
         render();
         renderDiario();
@@ -1155,12 +1287,23 @@
   var viewAnual = document.getElementById('viewAnual');
 
   var configOverlay = document.getElementById('configOverlay');
+  function daysSince(ts){
+    var x = new Date(ts), y = new Date();
+    x.setHours(0, 0, 0, 0); y.setHours(0, 0, 0, 0);
+    return Math.round((y - x) / DAY_MS);
+  }
   function renderBackupInfo(){
     var node = document.getElementById('backupInfo');
     if(!node) return;
-    var ts = null;
-    try{ ts = parseInt(localStorage.getItem('saldo_ultimo_backup'), 10) || null; }catch(e){}
-    node.textContent = ts ? ('Último backup: ' + new Date(ts).toLocaleDateString('pt-BR')) : 'Nenhum backup feito ainda neste aparelho.';
+    var ts = lsGetInt(BACKUP_KEY);
+    var late = true, text = 'Nenhum backup feito ainda neste aparelho.';
+    if(ts){
+      var d = daysSince(ts);
+      text = 'Último backup: ' + (d <= 0 ? 'hoje' : (d === 1 ? 'ontem' : 'há ' + d + ' dias'));
+      late = d >= BACKUP_LATE_DAYS;
+    }
+    node.textContent = text;
+    node.classList.toggle('atrasado', late);
   }
   function openConfig(){ renderBackupInfo(); if(configOverlay) configOverlay.classList.add('open'); }
   function closeConfig(){ if(configOverlay) configOverlay.classList.remove('open'); }
@@ -1176,13 +1319,37 @@
     });
   }
 
-  /* Escape fecha apenas a camada mais acima (confirmação > gasto rápido > ajustes) */
+  /* Fecha apenas a camada mais acima (confirmação > gasto rápido > ajustes).
+     Devolve true se havia alguma camada aberta. Usado pelo Escape e pelo botão voltar. */
+  function closeTopLayer(){
+    if(modalOverlay && modalOverlay.classList.contains('open')){ closeModalWith(false); return true; }
+    if(welcomeOverlay && welcomeOverlay.classList.contains('open')){ skipWelcome(); return true; }
+    if(quickOverlay && quickOverlay.classList.contains('open')){ closeQuick(); return true; }
+    if(configOverlay && configOverlay.classList.contains('open')){ closeConfig(); return true; }
+    return false;
+  }
+
   document.addEventListener('keydown', function(e){
-    if(e.key !== 'Escape') return;
-    if(modalOverlay && modalOverlay.classList.contains('open')){ closeModalWith(false); return; }
-    if(quickOverlay && quickOverlay.classList.contains('open')){ closeQuick(); return; }
-    if(configOverlay && configOverlay.classList.contains('open')){ closeConfig(); }
+    if(e.key === 'Escape') closeTopLayer();
   });
+
+  /* Botão voltar do Android (@capacitor/app): fecha a camada de cima; depois vai ao Diário;
+     já no Diário, sai do app. */
+  var backButtonBound = false;
+  function setupBackButton(){
+    if(backButtonBound) return;
+    var AppP = nativePlugin('App');
+    if(!AppP || typeof AppP.addListener !== 'function') return;
+    backButtonBound = true;
+    try{
+      var r = AppP.addListener('backButton', function(){
+        if(closeTopLayer()) return;
+        if(document.body.getAttribute('data-view') !== 'diario'){ showView('diario'); return; }
+        if(typeof AppP.exitApp === 'function') AppP.exitApp();
+      });
+      if(r && typeof r.catch === 'function') r.catch(function(){});
+    }catch(e){ backButtonBound = false; }
+  }
 
   var pageTitle = document.getElementById('pageTitle');
 
@@ -1234,27 +1401,61 @@
   var navImportBtns = document.querySelectorAll('.action-import');
   var importFile = document.getElementById('importFile');
 
+  function registrarBackup(){
+    lsSet(BACKUP_KEY, Date.now());
+    try{ localStorage.removeItem(BACKUP_SNOOZE_KEY); }catch(e){}
+    renderBackupInfo();
+    renderAvisoBackup();
+  }
+
+  function exportViaDownload(dataStr, name){
+    var blob = new Blob([dataStr], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 500);
+    registrarBackup();
+    showToast('Backup exportado.', 'success');
+  }
+
+  var exporting = false;
   function doExport(){
-    try{
-      var dataStr = JSON.stringify(state, null, 2);
-      var blob = new Blob([dataStr], { type: 'application/json' });
-      var url = URL.createObjectURL(blob);
-      var now = new Date();
-      var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
-      var stamp = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = 'saldo-simples-backup-' + stamp + '.json';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 500);
-      try{ localStorage.setItem('saldo_ultimo_backup', String(Date.now())); }catch(e){}
-      showToast('Backup exportado.', 'success');
-    }catch(err){
-      showToast('Não foi possível exportar os dados.', 'error');
-    }
+    if(exporting || !state) return;
+    var dataStr;
+    try{ dataStr = JSON.stringify(state, null, 2); }
+    catch(err){ showToast('Não foi possível exportar os dados.', 'error'); return; }
+    var name = 'saldo-backup-' + todayISO() + '.json';
     closeConfig();
+
+    var FS = nativePlugin('Filesystem');
+    var SH = nativePlugin('Share');
+    if(isNativeApp() && FS && SH){
+      // App Android: grava no cache e abre o menu de compartilhar (Drive, WhatsApp, e-mail...)
+      exporting = true;
+      FS.writeFile({ path: name, data: dataStr, directory: 'CACHE', encoding: 'utf8' })
+        .then(function(res){
+          return SH.share({ title: 'Backup do Saldo', text: 'Backup do Saldo', url: res.uri, dialogTitle: 'Salvar backup' });
+        })
+        .then(function(){
+          // só conta como backup depois que o compartilhar conclui
+          registrarBackup();
+          showToast('Compartilhamento concluído. Confira se o arquivo foi salvo onde você escolheu.', 'success', 6000);
+        })
+        .catch(function(err){
+          var msg = String((err && (err.message || err.errorMessage)) || err || '');
+          if(/cancel/i.test(msg)) showToast('Backup cancelado. Nenhum arquivo foi salvo.', 'info');
+          else showToast('Não foi possível exportar o backup.', 'error', 6000);
+        })
+        .then(function(){ exporting = false; });
+      return;
+    }
+
+    try{ exportViaDownload(dataStr, name); }
+    catch(err){ showToast('Não foi possível exportar os dados.', 'error'); }
   }
   for(var ei = 0; ei < navExportBtns.length; ei++){
     navExportBtns[ei].addEventListener('click', doExport);
@@ -1277,18 +1478,19 @@
           var parsed = JSON.parse(ev.target.result);
           var valid = parsed && Array.isArray(parsed.months) && Array.isArray(parsed.expenses) && Array.isArray(parsed.income);
           if(!valid){
-            showToast('Arquivo inválido. Verifique se é um backup do Saldo Simples.', 'error');
+            showToast('Arquivo inválido. Verifique se é um backup do Saldo.', 'error');
             return;
           }
           var migrated = migrateData(parsed);
           if(!migrated){
-            showToast('Este backup é de uma versão mais nova do Saldo Simples. Atualize o app para importá-lo.', 'error', 6000);
+            showToast('Este backup é de uma versão mais nova do Saldo. Atualize o app para importá-lo.', 'error', 6000);
             return;
           }
           showConfirm('Isso vai substituir todos os dados atuais pelos dados do arquivo importado. Deseja continuar?', { title: 'Importar backup', confirmLabel: 'Importar', danger: true }).then(function(ok){
             if(!ok) return;
             state = migrated;
             ensureCurrentMonthSelected();
+            marcarBoasVindas();
             persist();
             render();
             renderDiario();
@@ -1299,6 +1501,114 @@
         }
       };
       reader.readAsText(file);
+    });
+  }
+
+  /* ---------- Lembrete de backup (topo do Diário) ---------- */
+  function appIsEmpty(){
+    return !state || (state.expenses.length === 0 && state.income.length === 0 && state.daily.entries.length === 0);
+  }
+
+  function renderAvisoBackup(){
+    var box = document.getElementById('avisoBackup');
+    if(!box) return;
+    var msg = '';
+    if(!appIsEmpty()){
+      var snooze = lsGetInt(BACKUP_SNOOZE_KEY);
+      if(!(snooze && Date.now() < snooze)){
+        var last = lsGetInt(BACKUP_KEY);
+        if(!last){
+          msg = 'Você ainda não fez backup. Se desinstalar o app, os dados são perdidos.';
+        } else {
+          var d = daysSince(last);
+          if(d >= BACKUP_LATE_DAYS) msg = 'Seu último backup foi há ' + d + ' dias.';
+        }
+      }
+    }
+    var txt = document.getElementById('avisoBackupText');
+    if(txt) txt.textContent = msg;
+    box.hidden = !msg;
+  }
+
+  var btnAvisoFazer = document.getElementById('avisoBackupFazer');
+  if(btnAvisoFazer) btnAvisoFazer.addEventListener('click', doExport);
+  var btnAvisoDepois = document.getElementById('avisoBackupDepois');
+  if(btnAvisoDepois) btnAvisoDepois.addEventListener('click', function(){
+    lsSet(BACKUP_SNOOZE_KEY, Date.now() + BACKUP_SNOOZE_DAYS * DAY_MS);
+    renderAvisoBackup();
+  });
+
+  /* ---------- Boas-vindas (pop-up no primeiro uso, app vazio) ---------- */
+  var welcomeOverlay = document.getElementById('welcomeOverlay');
+  var welcomeForm = document.getElementById('welcomeForm');
+  var wSaldo = document.getElementById('wSaldo');
+  var welcomeSkipped = false; // "Pular por enquanto": vale só até fechar o app
+
+  function welcomePending(){
+    var done = false;
+    try{ done = !!localStorage.getItem(WELCOME_KEY); }catch(e){}
+    return !done && appIsEmpty();
+  }
+
+  function renderBoasVindas(){
+    if(!welcomeOverlay) return;
+    var show = welcomePending() && !welcomeSkipped;
+    var open = welcomeOverlay.classList.contains('open');
+    if(show && !open){
+      if(wSaldo) wSaldo.value = '';
+      welcomeOverlay.classList.add('open');
+      setTimeout(function(){ if(wSaldo) wSaldo.focus(); }, 150);
+    } else if(!show && open){
+      welcomeOverlay.classList.remove('open');
+    }
+  }
+
+  function skipWelcome(){
+    welcomeSkipped = true;
+    renderBoasVindas();
+  }
+
+  if(welcomeOverlay) welcomeOverlay.addEventListener('click', function(e){ if(e.target === welcomeOverlay) skipWelcome(); });
+  var btnBoasPular = document.getElementById('boasPular');
+  if(btnBoasPular) btnBoasPular.addEventListener('click', skipWelcome);
+  var btnBoasExemplo = document.getElementById('boasExemplo');
+  if(btnBoasExemplo) btnBoasExemplo.addEventListener('click', loadExample);
+  var btnBoasBackup = document.getElementById('boasBackup');
+  if(btnBoasBackup) btnBoasBackup.addEventListener('click', function(){
+    if(importFile){ importFile.value = ''; importFile.click(); }
+  });
+
+  if(wSaldo){
+    wSaldo.addEventListener('focus', function(){
+      var c = parseCentsText(wSaldo.value);
+      if(c !== null) wSaldo.value = centsToEdit(c);
+      setTimeout(function(){ try{ wSaldo.select(); }catch(e){} }, 0);
+    });
+    wSaldo.addEventListener('blur', function(){
+      var c = parseCentsText(wSaldo.value);
+      if(c !== null) wSaldo.value = fmtPlain(c);
+    });
+  }
+
+  if(welcomeForm){
+    welcomeForm.addEventListener('submit', function(e){
+      e.preventDefault();
+      var cents = parseCentsText(wSaldo.value);
+      if(cents === null){
+        showToast('Informe seu saldo atual. Se for zero, digite 0.', 'error');
+        wSaldo.focus();
+        return;
+      }
+      var mk = getSelectedDiarioMonth();
+      recomputeDailyBalances();
+      var expTotal = sumDailyMonth(mk).total;
+      var mensalCaido = mensalSaldoFor(mk, mensalCutoffDay(mk));
+      var primeiro = state.months.slice().sort()[0] === mk;
+      state.daily.balances[mk] = { initial: cents + expTotal - mensalCaido, manual: !primeiro };
+      marcarBoasVindas();
+      persist();
+      renderDiario();
+      showToast('Saldo registrado: ' + fmtMoney(cents) + '. Agora lance seus gastos no + ou cadastre as contas no Mensal.', 'success', 6000);
     });
   }
 
@@ -1586,9 +1896,53 @@
     return div.innerHTML;
   }
 
+  /* ---------- Avisos de vencimento (notificacoes.js) ---------- */
+  var notifStarted = false;
+
+  /* Botão "Marcar como paga" da notificação: items = [{ r: idDoItem, m: 'AAAA-MM' }] */
+  function markPaidFromNotification(items){
+    var n = 0;
+    items.forEach(function(it){
+      if(!it || !it.m) return;
+      var row = null;
+      for(var i = 0; i < state.expenses.length; i++){
+        if(state.expenses[i].id === it.r){ row = state.expenses[i]; break; }
+      }
+      if(!row) return;
+      if(!row.paid) row.paid = {};
+      if(!row.paid[it.m]){ row.paid[it.m] = true; n++; }
+    });
+    if(n) persist();
+    return n;
+  }
+
+  /* Toque na notificação: abre o Mensal no mês do vencimento */
+  function openMonthFromNotification(mk){
+    if(mk && state.months.indexOf(mk) !== -1){ state.selectedMonth = mk; persist(); }
+    showView('mensal');
+  }
+
+  function startNotifications(){
+    if(notifStarted || !window.SaldoNotif) return;
+    notifStarted = true;
+    window.SaldoNotif.init({
+      getState: function(){ return state; },
+      rowActiveIn: rowActiveIn,
+      effectiveDay: effectiveDay,
+      addMonthsToKey: addMonthsToKey,
+      fmtMoney: fmtMoney,
+      showToast: showToast,
+      markPaid: markPaidFromNotification,
+      openMonth: openMonthFromNotification
+    });
+  }
+
   /* ---------- Início ---------- */
   function init(){
     try{ ['saldo_token','saldo_user_name','saldo_user_first_name','saldo_pending_sync'].forEach(function(k){ localStorage.removeItem(k); }); }catch(e){}
+
+    var invalidSaved = false;
+    setupBackButton();
 
     storageGet(STORAGE_KEY).then(function(value){
       state = null;
@@ -1599,16 +1953,20 @@
         if(looksValid) state = migrateData(parsed);
         if(!state){
           storageSet(INVALID_KEY, value);
+          invalidSaved = true;
         }
       }
-      if(!state) state = seedData();
+      if(!state) state = emptyData();
       ensureCurrentMonthSelected();
       persist();
       showView('diario');
+      startNotifications();
+      if(invalidSaved) showToast('Não foi possível ler os dados salvos. Uma cópia foi guardada e o app abriu vazio.', 'error', 7000);
     }).catch(function(){
-      state = seedData();
+      state = emptyData();
       ensureCurrentMonthSelected();
       showView('diario');
+      startNotifications();
     });
   }
 

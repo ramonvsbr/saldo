@@ -1,4 +1,4 @@
-package com.ramon.saldosimples;
+package com.ramon.saldo;
 
 import com.getcapacitor.BridgeActivity;
 
