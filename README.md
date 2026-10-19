@@ -23,9 +23,6 @@
 
 ---
 
-> [!NOTE]
-> O Saldo é **somente Android**. A versão web/PWA, o login e a sincronização em nuvem foram descontinuados.
-
 ## 📖 Sobre
 
 O **Saldo** é um app de controle financeiro pessoal pensado para quem quer praticidade e privacidade. Ele funciona inteiramente no aparelho: não precisa de login, não envia nada para a nuvem e não depende de conexão.
@@ -177,33 +174,12 @@ saldo/
 | `@capacitor/app` | Botão voltar do Android |
 | `@capacitor/status-bar` | Cor da barra de status acompanhando o tema |
 
-### 🌿 Salvando no Git
-
-```powershell
-git add -A
-git commit -m "mensagem"
-git push
-```
-
-O `-A` registra também arquivos apagados. Se o `git add` reclamar de `Filename too long`, confira se o `.gitignore` ignora `node_modules/`, `www/` e os builds do Android, e rode:
-
-```powershell
-git config --global core.longpaths true
-```
-
-### 🏷️ Publicando uma versão
-
-Fazer `push` **não** gera release. Quando quiser disponibilizar um APK novo para download, crie um release na aba **Releases** do GitHub, anexando o `app-debug.apk` (ou o APK final).
-
 ## 🙏 Créditos
 
 - Empacotamento: [Capacitor](https://capacitorjs.com/).
 - Fonte: [Plus Jakarta Sans](https://fonts.google.com/specimen/Plus+Jakarta+Sans).
-- Visual compartilhado com o app **Maromba**.
 
 <div align="center">
 <br>
-
-**Feito para quem quer saber, de verdade, quanto sobra. 💰**
 
 </div>
