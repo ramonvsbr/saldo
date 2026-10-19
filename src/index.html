@@ -75,7 +75,7 @@
 
         <!-- VIEW MENSAL -->
         <div id="viewMensal" style="display:none;">
-          <div class="tabs-row" id="tabsRow"></div>
+          <div class="month-nav-row" id="tabsRow"></div>
 
           <div class="stat-strip">
             <div class="stat-card despesas">
@@ -95,19 +95,19 @@
             </div>
           </div>
 
-          <section class="book expenses">
+          <div class="tabs-row type-tabs" id="mensalTypeTabs"></div>
+
+          <section class="book expenses" id="bookExpenses">
             <div class="book-head">
               <h2 class="book-title"><span class="book-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span>Despesas</h2>
-              <span class="book-total" id="expTotalHead">R$ 0,00</span>
             </div>
             <div class="entry-list" id="expensesBody"></div>
             <button class="add-row-btn" id="addExpenseBtn" type="button"><span class="plus-sym">+</span> adicionar despesa</button>
           </section>
 
-          <section class="book income">
+          <section class="book income" id="bookIncome">
             <div class="book-head">
               <h2 class="book-title"><span class="book-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></span>Receitas</h2>
-              <span class="book-total" id="incTotalHead">R$ 0,00</span>
             </div>
             <div class="entry-list" id="incomeBody"></div>
             <button class="add-row-btn" id="addIncomeBtn" type="button"><span class="plus-sym">+</span> adicionar receita</button>
@@ -124,7 +124,16 @@
             </div>
           </div>
 
-          <div class="tabs-row" id="diarioTabsRow"></div>
+          <div class="month-nav-row" id="diarioTabsRow">
+          <div class="date-nav">
+            <div class="date-picker-pill">
+              <button id="btnDiarioDiaAnterior" class="btn-icon" type="button" title="Dia anterior" aria-label="Dia anterior">‹</button>
+              <input type="date" id="diarioDataInput" aria-label="Data dos lançamentos">
+              <button id="btnDiarioDiaProximo" class="btn-icon" type="button" title="Próximo dia" aria-label="Próximo dia">›</button>
+            </div>
+            <button id="btnDiarioDiaHoje" class="btn-hoje" type="button">Hoje</button>
+          </div>
+          </div>
 
           <div class="stat-strip">
             <div class="stat-card despesas">
@@ -147,27 +156,20 @@
             </div>
           </div>
 
-          <section class="book expenses">
+          <div class="tabs-row type-tabs" id="diarioTypeTabs"></div>
+
+          <section class="book expenses" id="diarioBook">
             <div class="book-head">
-              <h2 class="book-title"><span class="book-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span>Lançamentos</h2>
-              <span class="book-total" id="diarioTotalHead">R$ 0,00</span>
-            </div>
-            <div class="date-nav">
-              <div class="date-picker-pill">
-                <button id="btnDiarioDiaAnterior" class="btn-icon" type="button" title="Dia anterior" aria-label="Dia anterior">‹</button>
-                <input type="date" id="diarioDataInput" aria-label="Data dos lançamentos">
-                <button id="btnDiarioDiaProximo" class="btn-icon" type="button" title="Próximo dia" aria-label="Próximo dia">›</button>
-              </div>
-              <button id="btnDiarioDiaHoje" class="btn-hoje" type="button">Hoje</button>
+              <h2 class="book-title"><span class="book-icon" id="diarioBookIcon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span>Lançamentos</h2>
             </div>
             <div class="entry-list" id="diarioBody"></div>
-            <button class="add-row-btn" id="addDiarioBtn" type="button"><span class="plus-sym">+</span> adicionar gasto</button>
+            <button class="add-row-btn" id="addDiarioBtn" type="button"><span class="plus-sym">+</span> adicionar despesa</button>
           </section>
         </div>
 
         <!-- VIEW ANUAL -->
         <div id="viewAnual" style="display:none;">
-          <div class="tabs-row" id="anualTabs"></div>
+          <div class="month-nav-row" id="anualTabs"></div>
 
           <div class="stat-strip">
             <div class="stat-card despesas">
@@ -266,9 +268,21 @@
       <p class="hint" id="quickMonthLabel"></p>
       <label class="field"><span>Valor (R$)</span><input id="qValor" class="field-money" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00"></label>
       <label class="field"><span>Descrição</span><input id="qItem" type="text" autocomplete="off" placeholder="Ex.: padaria"></label>
-      <label class="field field-small"><span>Dia</span><input id="qDia" type="number" min="1" max="31" inputmode="numeric"></label>
+      <div id="qTipoBlock" style="display:none;">
+        <span class="notif-label" id="qTipoLabel">Tipo</span>
+        <div class="opt-row" id="qTipo" role="radiogroup" aria-labelledby="qTipoLabel">
+          <label class="opt-chip"><input type="radio" name="qTipo" value="once"><span>Avulso</span></label>
+          <label class="opt-chip"><input type="radio" name="qTipo" value="recurring"><span>∞ Recorrente</span></label>
+          <label class="opt-chip"><input type="radio" name="qTipo" value="installments"><span>Parcelado</span></label>
+        </div>
+        <p class="hint" id="qTipoHint"></p>
+      </div>
+      <div class="field-row">
+        <label class="field field-small"><span>Dia</span><input id="qDia" type="number" min="1" max="31" inputmode="numeric"></label>
+        <label class="field field-small" id="qParcelasField" style="display:none;"><span>Parcelas</span><input id="qParcelas" type="number" min="2" max="60" inputmode="numeric" placeholder="Ex.: 12"></label>
+      </div>
       <div class="backup-actions">
-        <button class="btn btn-accent" type="submit">Lançar gasto</button>
+        <button class="btn btn-accent" id="quickSubmit" type="submit">Lançar gasto</button>
       </div>
     </form>
   </div>

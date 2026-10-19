@@ -247,6 +247,15 @@ svg { display: block; }
 }
 .tab-close:hover { background: var(--oxide-soft); color: var(--oxide); }
 
+/* seletor de mês ‹ mês › (reaproveita .date-nav / .date-picker-pill) */
+.month-nav-row { margin: 0 0 18px; }
+.month-label {
+  flex: 1; min-width: 0; text-align: center; white-space: nowrap;
+  font-weight: 700; font-size: 15px; color: var(--text);
+}
+/* abas Despesas | Receitas */
+.type-tabs .tab { flex: 1; justify-content: center; }
+
 .tab-add {
   width: 38px; height: 38px; border-radius: 50%; border: 1px dashed var(--line-strong);
   background: var(--surface); color: var(--text); cursor: pointer; font-size: 16px;
@@ -310,9 +319,6 @@ section.book {
 .book-icon .icon { width: 16px; height: 16px; stroke-width: 2.5; }
 section.book.expenses .book-icon { background: var(--oxide-soft); color: var(--oxide); }
 section.book.income .book-icon { background: var(--moss-soft); color: var(--moss); }
-.book-total { font-family: var(--font-display); font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
-section.book.expenses .book-total { color: var(--oxide); }
-section.book.income .book-total { color: var(--moss); }
 
 .entry-list { display: flex; flex-direction: column; }
 
@@ -696,7 +702,8 @@ section.book.income .book-total { color: var(--moss); }
   .modal-actions { flex-direction: column-reverse; }
   #modalOverlay .modal-card { padding: 22px 18px; }
 
-  body[data-view="diario"] .fab { display: flex; }
+  body[data-view="diario"] .fab,
+  body[data-view="mensal"] .fab { display: flex; }
 }
 
 @media (max-width: 600px) {
@@ -860,3 +867,50 @@ section.book.income .book-total { color: var(--moss); }
 .welcome-alt { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
 .welcome-alt .btn { flex: 1 1 auto; }
 .stat-card.needs-saldo { border-color: var(--chalk); box-shadow: 0 0 0 3px var(--chalk-soft); }
+
+/* =========================================================
+   Cartão de lançamento: dia em pílula na linha do valor
+   (mesma altura, borda e fundo da caixa do valor).
+     Nome
+     chips (somente leitura)
+     [ Dia 5 ] ................. [ R$ valor ] [lixeira]
+   ========================================================= */
+.entry-item { grid-template-columns: auto minmax(0, 1fr); }
+.entry-main { grid-column: 1 / -1; grid-row: 1; }
+.entry-day-badge {
+  grid-column: 1; grid-row: 2; align-self: center;
+  width: auto; height: 36px; box-sizing: border-box; padding: 0 10px;
+  flex-direction: row; gap: 6px;
+}
+.entry-day-label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+.entry-day-input { width: 28px; font-size: 15px; }
+.entry-right { grid-column: 2; grid-row: 2; align-self: center; }
+.entry-val-wrap { height: 36px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; }
+
+/* chips de tipo/parcelas: só exibição (não reagem ao toque) */
+.chip-badge.static:not(.active):hover { border-color: transparent; color: var(--text-muted); }
+.chip-badge.static.active:hover { border-color: var(--chalk); color: var(--text); }
+
+/* formulário rápido: Dia e Parcelas lado a lado */
+.field-row { display: flex; gap: 12px; align-items: flex-start; }
+.field-row .field { flex: 0 1 120px; }
+.field-row .field-small input { max-width: none; }
+#qTipoHint { margin: -8px 0 16px; }
+
+/* no celular o + flutuante já faz o papel do "adicionar" no fim da lista */
+@media (max-width: 900px) {
+  .add-row-btn { display: none; }
+}
+
+/* setas do seletor sem destino (ex.: primeiro/último ano do Resumo anual) */
+.date-picker-pill .btn-icon:disabled { opacity: .35; cursor: default; }
+.date-picker-pill .btn-icon:disabled:hover { background: transparent; color: inherit; }
+
+/* animação ao trocar mês/dia (mesma ideia do carrossel do Anual) */
+@keyframes slideInNext { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes slideInPrev { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+.slide-next { animation: slideInNext .28s ease both; }
+.slide-prev { animation: slideInPrev .28s ease both; }
+
+/* barra de dia no topo do Diário (mesmo visual do seletor de mês) */
+#diarioTabsRow .date-nav { padding: 0; border: none; }

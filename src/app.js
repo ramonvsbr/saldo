@@ -4,6 +4,7 @@
   var STORAGE_KEY = "saldo-dados";
   var INVALID_KEY = "saldo-dados-invalido";
   var CURRENT_SCHEMA_VERSION = 3;
+  var MAX_MONTHS_AHEAD = 60; // até onde dá para avançar a partir de hoje (5 anos). Use Infinity para tirar o limite.
   var MONTH_NAMES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
   var CAL_SVG = '<svg class="icon" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 2.5v4M16 2.5v4"/></svg>';
   var TRASH_SVG = '<svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v5M14 11v5"/></svg>';
@@ -477,24 +478,34 @@
   function setDiarioData(iso){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) iso = todayISO();
     var mk = iso.slice(0, 7);
-    if(state.months.indexOf(mk) === -1){
-      state.months.push(mk);
-      state.months.sort();
-    }
+    if(!goToMonthKey(mk)){ renderDiario(); return; }
+    var dir = slideDirection(diarioData, iso);
+    var mudouMes = state.selectedDiarioMonth !== mk;
     state.selectedDiarioMonth = mk;
     diarioData = iso;
     persist();
     renderDiario();
+    // mesmo mês: só a lista do dia desliza; mês diferente: o painel inteiro
+    playSlide(mudouMes ? slideTargets('viewDiario') : [document.getElementById('diarioBook')], dir);
   }
 
-  function sumDailyMonth(monthKey){
+  /* Lançamentos do Diário: despesa (padrão) ou receita (row.type === 'income') */
+  function isDailyIncome(row){ return row.type === 'income'; }
+  function dailyMatches(row, kind){ return (kind === 'income') === isDailyIncome(row); }
+
+  function sumDailyMonth(monthKey, kind){
     var total = 0, count = 0;
     state.daily.entries.forEach(function(row){
-      if(row.monthKey !== monthKey) return;
+      if(row.monthKey !== monthKey || !dailyMatches(row, kind)) return;
       var v = row.amount;
       if(typeof v === 'number' && !isNaN(v)){ total += v; count++; }
     });
     return { total: total, count: count };
+  }
+
+  /* receitas do Diário menos despesas do Diário */
+  function dailyNetMonth(monthKey){
+    return sumDailyMonth(monthKey, 'income').total - sumDailyMonth(monthKey, 'expenses').total;
   }
 
   function mensalSaldoFor(monthKey, upToDay){
@@ -503,14 +514,10 @@
     return inc.total - exp.total;
   }
 
-  function sumDailyDay(monthKey, day){
-    var total = 0, count = 0;
-    state.daily.entries.forEach(function(row){
-      if(row.monthKey !== monthKey || effectiveDay(row, monthKey) !== day) return;
-      var v = row.amount;
-      if(typeof v === 'number' && !isNaN(v)){ total += v; count++; }
-    });
-    return { total: total, count: count };
+  /* O saldo atual só desconta as despesas do Mensal que já caíram;
+     as receitas do Mensal só entram no projetado. */
+  function mensalDespesaCaida(monthKey){
+    return sumMonth(state.expenses, monthKey, mensalCutoffDay(monthKey)).total;
   }
 
   function recomputeDailyBalances(){
@@ -526,41 +533,10 @@
         carry = existing.initial;
       } else {
         var prevKey = sorted[idx-1];
-        var prevFinal = carry - sumDailyMonth(prevKey).total;
+        var prevFinal = carry + dailyNetMonth(prevKey);
         var thisInitial = prevFinal + mensalSaldoFor(prevKey);
         state.daily.balances[mk] = { initial: thisInitial, manual: false };
         carry = thisInitial;
-      }
-    });
-  }
-
-  function removeMonth(mk) {
-    showConfirm("Tem certeza que deseja apagar o mês " + monthLabel(mk) + "?", { title: 'Apagar mês', confirmLabel: 'Apagar', danger: true }).then(function(ok){
-      if(!ok) return;
-      var idx = state.months.indexOf(mk);
-      if (idx > -1) {
-        state.months.splice(idx, 1);
-        state.expenses.forEach(function(e) { delete e.values[mk]; if(e.paid) delete e.paid[mk]; });
-        state.income.forEach(function(i) { delete i.values[mk]; });
-        state.daily.entries = state.daily.entries.filter(function(row){ return row.monthKey !== mk; });
-        delete state.daily.balances[mk];
-
-        if (state.months.length === 0) {
-          var todayKey = getTodayMonthKey();
-          state.months.push(todayKey);
-          state.selectedMonth = todayKey;
-          state.selectedDiarioMonth = todayKey;
-        } else {
-          if (state.selectedMonth === mk) {
-            state.selectedMonth = state.months[Math.max(0, idx - 1)];
-          }
-          if (state.selectedDiarioMonth === mk) {
-            state.selectedDiarioMonth = state.months[Math.max(0, idx - 1)];
-          }
-        }
-        persist();
-        render();
-        renderDiario();
       }
     });
   }
@@ -603,74 +579,178 @@
     return copied;
   }
 
-  function addNextMonth(){
-    var sorted = state.months.slice().sort();
-    var nk = nextMonthKey(sorted[sorted.length - 1]);
-    if(state.months.indexOf(nk) !== -1) return null;
-    var base = findBaseMonth(nk);
-    state.months.push(nk);
-    state.months.sort();
-    if(base){
-      var n = copyMonthValues(base, nk);
-      if(n > 0){
-        showToast('Valores de ' + monthLabel(base) + ' copiados para ' + monthLabel(nk) + '. Ajuste o que mudou.', 'info', 6000);
+  function isMonthTracked(mk){ return state.months.indexOf(mk) !== -1; }
+
+  function maxMonthKey(){ return addMonthsToKey(getTodayMonthKey(), MAX_MONTHS_AHEAD); }
+
+  /* Cria os meses que faltam depois do último, copiando os valores recorrentes de cada um para o seguinte. */
+  function appendMonthsThrough(targetKey){
+    var cur = state.months.slice().sort().pop();
+    var from = null, to = null;
+    while(cur < targetKey){
+      var nk = nextMonthKey(cur);
+      if(state.months.indexOf(nk) === -1){
+        var base = findBaseMonth(nk);
+        state.months.push(nk);
+        state.months.sort();
+        if(base && copyMonthValues(base, nk) > 0){ from = base; to = nk; }
       }
+      cur = nk;
     }
-    return nk;
+    if(to){
+      showToast('Valores de ' + monthLabel(from) + ' copiados para ' + monthLabel(to) + '. Ajuste o que mudou.', 'info', 4500);
+    }
+  }
+
+  /* Torna o mês "cadastrado" (entra em state.months). Chamado quando o usuário lança algo nele.
+     Mês anterior ao primeiro: vira o novo primeiro mês e o saldo inicial já informado é preservado. */
+  function ensureMonth(mk){
+    if(isMonthTracked(mk)) return;
+    var sorted = state.months.slice().sort();
+    var first = sorted[0];
+    var last = sorted[sorted.length - 1];
+    if(mk > last){ appendMonthsThrough(mk); return; }
+    if(mk < first){
+      recomputeDailyBalances();
+      var b = state.daily.balances[first];
+      // se o antigo primeiro mês tinha um saldo inicial informado, ele não passa a ser recalculado
+      if(b && b.initial !== 0) b.manual = true;
+    }
+    state.months.push(mk);
+    state.months.sort();
+  }
+
+  /* Navegação: vai para qualquer mês. Para frente, cria os meses (até o limite).
+     Para trás do primeiro mês, não cria nada: o mês aparece vazio e sem saldo.
+     Devolve false se o destino passa do limite. */
+  function goToMonthKey(mk){
+    if(isMonthTracked(mk)) return true;
+    var last = state.months.slice().sort().pop();
+    if(mk > last){
+      if(mk > maxMonthKey()){
+        showToast('Limite de ' + (MAX_MONTHS_AHEAD / 12) + ' anos à frente.', 'info');
+        return false;
+      }
+      appendMonthsThrough(mk);
+      persist();
+    }
+    return true;
   }
 
   /* ---------- Render: Mensal ---------- */
+  var mensalTipo = 'expenses'; // aba aberta no Mensal (só na memória)
+  var diarioTipo = 'expenses'; // aba aberta no Diário (só na memória)
+
   function render(){
     renderTabs();
+    renderMensalTypeTabs();
     renderPanel();
     renderTable('expenses');
     renderTable('income');
   }
 
-  function buildTabs(rowEl, selectedKey, onSelect, onAdd){
-    rowEl.innerHTML = "";
-
-    state.months.forEach(function(mk){
-      var btn = document.createElement('button');
+  /* Abas Despesas | Receitas (mesmo estilo de chips) */
+  function buildTypeTabs(rowEl, active, onSelect){
+    rowEl.innerHTML = '';
+    [['expenses', 'Despesas'], ['income', 'Receitas']].forEach(function(t){
+      var btn = el('button', 'tab' + (t[0] === active ? ' active' : ''), t[1]);
       btn.type = 'button';
-      btn.className = 'tab' + (mk === selectedKey ? ' active' : '');
-      btn.title = monthLabel(mk);
-
-      btn.appendChild(el('span', '', monthShort(mk)));
-
-      var closeBtn = el('span', 'tab-close');
-      closeBtn.innerHTML = '&times;';
-      closeBtn.title = 'Apagar mês';
-      closeBtn.addEventListener('click', function(e){
-        e.stopPropagation();
-        removeMonth(mk);
-      });
-      btn.appendChild(closeBtn);
-
-      btn.addEventListener('click', function(){ onSelect(mk); });
+      btn.setAttribute('aria-pressed', t[0] === active ? 'true' : 'false');
+      btn.addEventListener('click', function(){ onSelect(t[0]); });
       rowEl.appendChild(btn);
     });
+  }
 
-    var addBtn = el('button', 'tab-add', '+');
-    addBtn.type = 'button';
-    addBtn.title = 'Adicionar próximo mês';
-    addBtn.addEventListener('click', onAdd);
-    rowEl.appendChild(addBtn);
+  function renderMensalTypeTabs(){
+    var row = document.getElementById('mensalTypeTabs');
+    if(row) buildTypeTabs(row, mensalTipo, function(k){ mensalTipo = k; renderMensalTypeTabs(); });
+    var be = document.getElementById('bookExpenses');
+    var bi = document.getElementById('bookIncome');
+    if(be) be.style.display = mensalTipo === 'expenses' ? '' : 'none';
+    if(bi) bi.style.display = mensalTipo === 'income' ? '' : 'none';
+  }
+
+  /* Animação ao trocar de mês/dia: o conteúdo entra deslizando do lado de onde o usuário vem
+     (próximo = entra pela direita, anterior = pela esquerda). */
+  function slideDirection(from, to){
+    if(!from || !to || from === to) return null;
+    return to > from ? 'next' : 'prev';
+  }
+
+  function slideTargets(viewId){
+    var view = document.getElementById(viewId);
+    var out = [];
+    if(!view) return out;
+    for(var i = 0; i < view.children.length; i++){
+      var n = view.children[i];
+      if(n.classList.contains('month-nav-row') || n.classList.contains('aviso')) continue;
+      out.push(n);
+    }
+    return out;
+  }
+
+  function playSlide(nodes, dir){
+    if(!dir) return;
+    var cls = dir === 'next' ? 'slide-next' : 'slide-prev';
+    nodes.forEach(function(n){
+      if(!n) return;
+      n.classList.remove('slide-next', 'slide-prev');
+      void n.offsetWidth; // reinicia a animação se ela ainda estiver rodando
+      n.classList.add(cls);
+      clearTimeout(n._slideT);
+      n._slideT = setTimeout(function(){ n.classList.remove(cls); }, 400);
+    });
+  }
+
+  /* Seletor de mês com ‹ ›. Vai para qualquer mês: para frente cria o mês (copiando os valores
+     recorrentes, até MAX_MONTHS_AHEAD); antes do primeiro mês cadastrado mostra o mês vazio. */
+  function buildMonthNav(rowEl, selectedKey, onSelect){
+    rowEl.innerHTML = '';
+
+    var nav = el('div', 'date-nav');
+    var pill = el('div', 'date-picker-pill');
+
+    var prev = el('button', 'btn-icon', '‹');
+    prev.type = 'button';
+    prev.title = 'Mês anterior';
+    prev.setAttribute('aria-label', 'Mês anterior');
+    prev.addEventListener('click', function(){ onSelect(addMonthsToKey(selectedKey, -1)); });
+
+    var label = el('span', 'month-label', monthLabel(selectedKey));
+    label.setAttribute('aria-live', 'polite');
+
+    var next = el('button', 'btn-icon', '›');
+    next.type = 'button';
+    next.title = 'Próximo mês';
+    next.setAttribute('aria-label', next.title);
+    next.addEventListener('click', function(){ onSelect(addMonthsToKey(selectedKey, 1)); });
+
+    pill.appendChild(prev);
+    pill.appendChild(label);
+    pill.appendChild(next);
+    nav.appendChild(pill);
+
+    var todayKey = getTodayMonthKey();
+    if(selectedKey !== todayKey){
+      var hoje = el('button', 'btn-hoje', 'Hoje');
+      hoje.type = 'button';
+      hoje.title = 'Voltar ao mês atual';
+      hoje.addEventListener('click', function(){ onSelect(todayKey); });
+      nav.appendChild(hoje);
+    }
+    rowEl.appendChild(nav);
   }
 
   function renderTabs(){
     var row = document.getElementById('tabsRow');
     if(!row) return;
-    buildTabs(row, state.selectedMonth, function(mk){
+    buildMonthNav(row, state.selectedMonth, function(mk){
+      if(!goToMonthKey(mk)) return;
+      var dir = slideDirection(state.selectedMonth, mk);
       state.selectedMonth = mk;
+      persist();
       render();
-    }, function(){
-      var nk = addNextMonth();
-      if(nk){
-        state.selectedMonth = nk;
-        persist();
-        render();
-      }
+      playSlide(slideTargets('viewMensal'), dir);
     });
   }
 
@@ -700,13 +780,7 @@
     }
 
     var elSub = document.getElementById('statSaldoSub');
-    if(elSub) elSub.textContent = saldo >= 0 ? 'positivo' : 'negativo';
-
-    var elExpHead = document.getElementById('expTotalHead');
-    if(elExpHead) elExpHead.textContent = fmtMoney(exp.total);
-
-    var elIncHead = document.getElementById('incTotalHead');
-    if(elIncHead) elIncHead.textContent = fmtMoney(inc.total);
+    if(elSub) elSub.textContent = !isMonthTracked(mk) ? 'sem lançamentos' : (saldo >= 0 ? 'positivo' : 'negativo');
   }
 
   function dayValue(row){
@@ -824,10 +898,10 @@
     return chip;
   }
 
-  /* Tipos de item (mutuamente exclusivos):
-     - recorrente (∞): copiado para os próximos meses; a caixa de parcelas fica escondida
-     - parcelado: tem nº de parcelas > 1; o botão ∞ fica escondido
-     - avulso: só no mês atual; mostra a caixa de parcelas e o ∞ (desmarcado) lado a lado */
+  /* Tipos de item (mutuamente exclusivos, definidos ao adicionar e só exibidos no cartão):
+     - recorrente (∞): copiado para os próximos meses
+     - parcelado: mostra o número de parcelas e em qual parcela o mês está
+     - avulso: só no mês em que foi lançado */
   function buildTags(row, kind){
     var tags = el('div', 'entry-tags');
 
@@ -837,77 +911,19 @@
     }
 
     var instTotal = row.instTotal || 1;
-    var instStart = row.instStart || state.selectedMonth;
-    var currentDiff = getMonthDiff(instStart, state.selectedMonth);
-    var parcelado = instTotal > 1;
-    var avulso = isOnce(row);
-    var recorrente = !parcelado && !avulso;
-
-    // Parcelas: some quando o ∞ está definido
-    if(!recorrente){
-      var instChip = el('span', 'chip-badge' + (parcelado ? ' active' : ''));
-      var instInput = el('input', 'chip-inst-input');
-      instInput.type = 'number';
-      instInput.min = 1;
-      instInput.placeholder = '1';
-      instInput.title = 'Número de parcelas (meses)';
-      instInput.setAttribute('aria-label', 'Número de parcelas');
-      instInput.value = parcelado ? instTotal : '';
-      instInput.addEventListener('change', function(){
-        var t = parseInt(instInput.value, 10);
-        if(isNaN(t) || t < 1) t = 1;
-        row.instTotal = t;
-        if (t > 1) { delete row.once; delete row.onceMonth; }
-        if (!row.instStart || t === 1) row.instStart = state.selectedMonth;
-
-        if (t > 1) {
-          var baseVal = row.values[row.instStart] !== undefined ? row.values[row.instStart] : row.values[state.selectedMonth];
-          if (baseVal !== undefined) {
-            for (var i = 0; i < t; i++) {
-              var mk = addMonthsToKey(row.instStart, i);
-              row.values[mk] = baseVal;
-              if (state.months.indexOf(mk) === -1) state.months.push(mk);
-            }
-            state.months.sort();
-          }
-        }
-        persist();
-        render();
-      });
-      instChip.appendChild(instInput);
-      instChip.appendChild(document.createTextNode(parcelado ? 'parcelas' : 'parcela'));
-      tags.appendChild(instChip);
-
-      if(parcelado){
-        var status;
-        if (currentDiff < 0) status = 'Futuro';
-        else if (currentDiff >= instTotal) status = 'Fim';
-        else status = (currentDiff + 1) + '/' + instTotal;
-        tags.appendChild(el('span', 'chip-badge static', status));
-      }
-    }
-
-    // ∞ recorrente: some quando há parcelas definidas
-    if(!parcelado){
-      var recur = el('button', 'chip-badge' + (recorrente ? ' active' : ''), '∞ recorrente');
-      recur.type = 'button';
-      recur.title = recorrente
-        ? 'Recorrente: é copiado para os próximos meses. Toque para desmarcar (item avulso ou parcelado).'
-        : 'Avulso: aparece só em ' + monthLabel(row.onceMonth || state.selectedMonth) + '. Toque para tornar recorrente.';
-      recur.addEventListener('click', function(){
-        if(isOnce(row)){
-          delete row.once;
-          delete row.onceMonth;
-          showToast('Item recorrente: passa a ser copiado nos próximos meses.', 'info');
-        } else {
-          row.once = true;
-          row.onceMonth = state.selectedMonth;
-          showToast('Item avulso em ' + monthLabel(state.selectedMonth) + '. Se for parcelado, informe as parcelas.', 'info');
-        }
-        persist();
-        render();
-      });
-      tags.appendChild(recur);
+    if(instTotal > 1){
+      var instStart = row.instStart || state.selectedMonth;
+      var currentDiff = getMonthDiff(instStart, state.selectedMonth);
+      var status;
+      if (currentDiff < 0) status = 'Futuro';
+      else if (currentDiff >= instTotal) status = 'Fim';
+      else status = (currentDiff + 1) + '/' + instTotal;
+      tags.appendChild(el('span', 'chip-badge static active', instTotal + ' parcelas'));
+      tags.appendChild(el('span', 'chip-badge static', status));
+    } else if(isOnce(row)){
+      tags.appendChild(el('span', 'chip-badge static', 'avulso'));
+    } else {
+      tags.appendChild(el('span', 'chip-badge static active', '∞ recorrente'));
     }
     return tags;
   }
@@ -924,6 +940,9 @@
       if(isInstallment(r) && !rowActiveIn(r, state.selectedMonth)) return false;
       return true;
     }).sort(function(a, b){ return dayValue(a) - dayValue(b); });
+
+    // mês anterior ao primeiro cadastrado: aparece vazio (nada é copiado para ele)
+    if(!isMonthTracked(state.selectedMonth)) list = [];
 
     if(list.length === 0){
       container.appendChild(el('div', 'empty-note', 'Nenhum item ainda.'));
@@ -957,14 +976,17 @@
         onValue: function(v){
           var t = row.instTotal || 1;
           var start = row.instStart || state.selectedMonth;
+          var sel = state.selectedMonth;
+          // item recorrente (nem parcelado, nem avulso): a alteração vale deste mês em diante
+          var recorrente = !isInstallment(row) && !isOnce(row);
 
           if(v === null){
-            delete row.values[state.selectedMonth];
+            delete row.values[sel];
             if (t > 1) {
               for (var i = 0; i < t; i++) { delete row.values[addMonthsToKey(start, i)]; }
             }
           } else {
-            row.values[state.selectedMonth] = v;
+            row.values[sel] = v;
             if (t > 1) {
               for (var j = 0; j < t; j++) {
                 var mk = addMonthsToKey(start, j);
@@ -975,6 +997,16 @@
               renderTabs();
             }
           }
+
+          if(recorrente){
+            state.months.forEach(function(m){
+              if(m <= sel) return;
+              if(v === null) delete row.values[m];
+              else row.values[m] = v;
+            });
+            showToast((v === null ? 'Valor removido de ' : 'Valor alterado de ') + monthLabel(sel) +
+              ' em diante. Para algo só deste mês, adicione um item avulso.', 'info', 5000);
+          }
           persist();
           renderPanel();
         }
@@ -983,30 +1015,12 @@
   }
 
   /* ---------- Render: Diário ---------- */
-  function renderDiarioTabs(){
-    var row = document.getElementById('diarioTabsRow');
-    if(!row) return;
-    buildTabs(row, getSelectedDiarioMonth(), function(mk){
-      state.selectedDiarioMonth = mk;
-      persist();
-      renderDiario();
-    }, function(){
-      var nk = addNextMonth();
-      if(nk){
-        state.selectedDiarioMonth = nk;
-        persist();
-        renderDiario();
-      }
-    });
-  }
-
   var saldoAtualCents = 0;
 
   function renderDiario(){
     var mk = getSelectedDiarioMonth();
     // a data visualizada sempre pertence ao mês selecionado nas abas
     if(diarioData.slice(0, 7) !== mk) diarioData = (mk === getTodayMonthKey()) ? todayISO() : mk + '-01';
-    renderDiarioTabs();
     recomputeDailyBalances();
 
     var dateInput = document.getElementById('diarioDataInput');
@@ -1014,12 +1028,19 @@
     var btnHoje = document.getElementById('btnDiarioDiaHoje');
     if(btnHoje) btnHoje.classList.toggle('is-hoje', diarioData === todayISO());
 
-    var exp = sumDailyMonth(mk);
-    var initial = state.daily.balances[mk].initial;
+    renderDiarioTypeTabs();
+
+    var exp = sumDailyMonth(mk, 'expenses');
+    var inc = sumDailyMonth(mk, 'income');
+    // mês anterior ao primeiro cadastrado: aparece vazio e sem saldo
+    var tracked = isMonthTracked(mk);
+    var initial = tracked ? state.daily.balances[mk].initial : 0;
     var cutoff = mensalCutoffDay(mk);
 
-    var saldoAtual = initial + mensalSaldoFor(mk, cutoff) - exp.total;
-    var projetado = initial + mensalSaldoFor(mk) - exp.total;
+    // saldo atual: só as despesas do Mensal que já caíram (receitas do Mensal ficam de fora)
+    var saldoAtual = tracked ? initial - mensalDespesaCaida(mk) - exp.total + inc.total : 0;
+    // projetado: com todo o Mensal (despesas e receitas)
+    var projetado = tracked ? initial + mensalSaldoFor(mk) - exp.total + inc.total : 0;
 
     var elExp = document.getElementById('diarioDespesas');
     if(elExp) elExp.textContent = fmtMoney(exp.total);
@@ -1027,24 +1048,22 @@
     var elExpCount = document.getElementById('diarioDespesasCount');
     if(elExpCount) elExpCount.textContent = exp.count + (exp.count===1?' item':' itens') + ' em ' + monthLabel(mk);
 
-    var elHead = document.getElementById('diarioTotalHead');
-    if(elHead) elHead.textContent = fmtMoney(sumDailyDay(mk, diarioDay()).total);
-
     var saldoInput = document.getElementById('diarioSaldoAtualInput');
     saldoAtualCents = saldoAtual;
     if(saldoInput && document.activeElement !== saldoInput){
-      saldoInput.value = fmtMoney(saldoAtual);
+      saldoInput.value = tracked ? fmtMoney(saldoAtual) : '—';
     }
     if(saldoInput){
-      saldoInput.classList.toggle('pos', saldoAtual >= 0);
-      saldoInput.classList.toggle('neg', saldoAtual < 0);
+      saldoInput.classList.toggle('pos', tracked && saldoAtual >= 0);
+      saldoInput.classList.toggle('neg', tracked && saldoAtual < 0);
     }
 
     var elAtualSub = document.getElementById('diarioSaldoAtualSub');
     if(elAtualSub){
-      if(cutoff === 0) elAtualSub.textContent = 'ainda sem o Mensal deste mês';
-      else if(cutoff >= 99) elAtualSub.textContent = 'inclui todo o Mensal do mês';
-      else elAtualSub.textContent = 'inclui o Mensal até o dia ' + cutoff;
+      if(!tracked) elAtualSub.textContent = 'sem saldo antes de ' + monthLabel(state.months.slice().sort()[0]);
+      else if(cutoff === 0) elAtualSub.textContent = 'ainda sem despesas do Mensal';
+      else if(cutoff >= 99) elAtualSub.textContent = 'com as despesas do Mensal';
+      else elAtualSub.textContent = 'despesas do Mensal até o dia ' + cutoff;
     }
 
     // primeiro passo pendente: destaca o cartão do saldo atual
@@ -1055,12 +1074,12 @@
 
     var elFinal = document.getElementById('diarioSaldoFinal');
     if(elFinal){
-      elFinal.textContent = fmtMoney(projetado);
-      elFinal.classList.toggle('pos', projetado >= 0);
-      elFinal.classList.toggle('neg', projetado < 0);
+      elFinal.textContent = tracked ? fmtMoney(projetado) : '—';
+      elFinal.classList.toggle('pos', tracked && projetado >= 0);
+      elFinal.classList.toggle('neg', tracked && projetado < 0);
     }
     var elFinalSub = document.getElementById('diarioSaldoFinalSub');
-    if(elFinalSub) elFinalSub.textContent = 'com todo o Mensal de ' + monthLabel(mk);
+    if(elFinalSub) elFinalSub.textContent = tracked ? 'com todo o Mensal de ' + monthLabel(mk) : 'mês anterior ao saldo inicial';
 
     renderAvisoBackup();
     renderBoasVindas();
@@ -1074,17 +1093,19 @@
     container.innerHTML = "";
 
     var day = diarioDay();
-    var list = state.daily.entries.filter(function(row){ return row.monthKey === mk && effectiveDay(row, mk) === day; });
+    var list = state.daily.entries.filter(function(row){
+      return row.monthKey === mk && effectiveDay(row, mk) === day && dailyMatches(row, diarioTipo);
+    });
 
     if(list.length === 0){
-      container.appendChild(el('div', 'empty-note', 'Nenhum lançamento neste dia.'));
+      container.appendChild(el('div', 'empty-note', diarioTipo === 'income' ? 'Nenhuma receita neste dia.' : 'Nenhuma despesa neste dia.'));
       return;
     }
 
     list.forEach(function(row){
       container.appendChild(buildEntryItem({
         name: row.item,
-        namePlaceholder: 'Nome do gasto',
+        namePlaceholder: diarioTipo === 'income' ? 'Nome da receita' : 'Nome do gasto',
         delTitle: 'Remover lançamento',
         dayValue: row.day,
         valueCents: row.amount,
@@ -1112,10 +1133,26 @@
     });
   }
 
+  /* Abas Despesas | Receitas do Diário; ajusta também o bloco de lançamentos */
+  function renderDiarioTypeTabs(){
+    var row = document.getElementById('diarioTypeTabs');
+    if(row) buildTypeTabs(row, diarioTipo, function(k){ diarioTipo = k; renderDiario(); });
+    var book = document.getElementById('diarioBook');
+    if(book) book.className = 'book ' + (diarioTipo === 'income' ? 'income' : 'expenses');
+    var icon = document.getElementById('diarioBookIcon');
+    if(icon) icon.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="' +
+      (diarioTipo === 'income' ? 'M12 19V5M6 11l6-6 6 6' : 'M12 5v14M6 13l6 6 6-6') + '"/></svg>';
+    var add = document.getElementById('addDiarioBtn');
+    if(add) add.innerHTML = '<span class="plus-sym">+</span> ' + (diarioTipo === 'income' ? 'adicionar receita' : 'adicionar despesa');
+  }
+
   function addDiarioRow(){
     var mk = getSelectedDiarioMonth();
+    ensureMonth(mk);
     var id = 'd' + (state.daily.nextId++);
-    state.daily.entries.push({ id: id, day: diarioDay(), item: '', amount: undefined, monthKey: mk });
+    var entry = { id: id, day: diarioDay(), item: '', amount: undefined, monthKey: mk };
+    if(diarioTipo === 'income') entry.type = 'income';
+    state.daily.entries.push(entry);
     persist();
     renderDiario();
     focusLastName('diarioBody');
@@ -1149,15 +1186,55 @@
   var qValor = document.getElementById('qValor');
   var qItem = document.getElementById('qItem');
   var qDia = document.getElementById('qDia');
+  var qParcelas = document.getElementById('qParcelas');
+  var quickTipo = 'once'; // once (avulso) | recurring | installments (só no Mensal)
+
+  var TIPO_HINTS = {
+    once: 'Aparece só neste mês.',
+    recurring: 'Repete todo mês. Se mudar o valor depois, vale dali em diante.',
+    installments: 'O valor informado é o de cada parcela.'
+  };
+
+  function setQuickTipo(t){
+    quickTipo = t;
+    var radios = document.querySelectorAll('#qTipo input[type="radio"]');
+    for(var i = 0; i < radios.length; i++) radios[i].checked = (radios[i].value === t);
+    var pf = document.getElementById('qParcelasField');
+    if(pf) pf.style.display = (t === 'installments') ? '' : 'none';
+    var hint = document.getElementById('qTipoHint');
+    if(hint) hint.textContent = TIPO_HINTS[t] || '';
+  }
+
+  var qTipoGroup = document.getElementById('qTipo');
+  if(qTipoGroup) qTipoGroup.addEventListener('change', function(e){
+    if(e.target && e.target.value) setQuickTipo(e.target.value);
+    if(e.target && e.target.value === 'installments' && qParcelas) setTimeout(function(){ qParcelas.focus(); }, 30);
+  });
+
+  /* Botão +: no Diário lança despesa/receita do dia; no Mensal cria o item na aba aberta. */
+  var quickMode = 'diario';
+  var quickKind = 'expenses';
 
   function openQuick(){
     if(!quickOverlay || !state) return;
-    var mk = getSelectedDiarioMonth();
+    quickMode = document.body.getAttribute('data-view') === 'mensal' ? 'mensal' : 'diario';
+    quickKind = quickMode === 'mensal' ? mensalTipo : diarioTipo;
+    var mk = quickMode === 'mensal' ? state.selectedMonth : getSelectedDiarioMonth();
+    var isInc = quickKind === 'income';
+    var title = document.getElementById('quickTitle');
+    if(title) title.textContent = isInc ? 'Nova receita' : 'Nova despesa';
     var lbl = document.getElementById('quickMonthLabel');
-    if(lbl) lbl.textContent = 'Será lançado em ' + monthLabel(mk) + '.';
+    if(lbl) lbl.textContent = (quickMode === 'mensal' ? 'Será adicionada ao Mensal de ' : 'Será lançada em ') + monthLabel(mk) + '.';
     if(qValor) qValor.value = '';
     if(qItem) qItem.value = '';
-    if(qDia) qDia.value = diarioDay();
+    if(qDia) qDia.value = quickMode === 'mensal' ? '' : diarioDay();
+    if(qParcelas) qParcelas.value = '';
+    // tipo (avulso / recorrente / parcelado) só existe no Mensal; despesa começa avulsa e receita recorrente
+    var tipoBlock = document.getElementById('qTipoBlock');
+    if(tipoBlock) tipoBlock.style.display = quickMode === 'mensal' ? '' : 'none';
+    setQuickTipo(isInc ? 'recurring' : 'once');
+    var submitBtn = document.getElementById('quickSubmit');
+    if(submitBtn) submitBtn.textContent = quickMode === 'mensal' ? (isInc ? 'Adicionar receita' : 'Adicionar despesa') : 'Lançar gasto';
     quickOverlay.classList.add('open');
     setTimeout(function(){ if(qValor) qValor.focus(); }, 60);
   }
@@ -1178,16 +1255,61 @@
         qValor.focus();
         return;
       }
-      var mk = getSelectedDiarioMonth();
+      var isInc = quickKind === 'income';
+      var name = (qItem.value || '').trim();
       var day = parseInt(qDia.value, 10);
+
+      if(quickMode === 'mensal'){
+        var mkM = state.selectedMonth;
+        var nParc = 1;
+        if(quickTipo === 'installments'){
+          nParc = parseInt(qParcelas.value, 10);
+          if(isNaN(nParc) || nParc < 2 || nParc > 60){
+            showToast('Informe de 2 a 60 parcelas.', 'error');
+            qParcelas.focus();
+            return;
+          }
+        }
+        ensureMonth(mkM);
+        day = isNaN(day) ? null : Math.max(1, Math.min(31, day));
+        var idM = (isInc ? 'r' : 'e') + (state.nextId++);
+        var rowM = { id: idM, day: day, item: name, values: {}, instTotal: nParc, instStart: mkM };
+        if(quickTipo === 'installments'){
+          for(var pi = 0; pi < nParc; pi++){
+            var mp = addMonthsToKey(mkM, pi);
+            ensureMonth(mp);
+            rowM.values[mp] = cents;
+          }
+        } else if(quickTipo === 'recurring'){
+          // recorrente: já entra neste mês e em todos os meses seguintes que existem
+          state.months.forEach(function(m){ if(m >= mkM) rowM.values[m] = cents; });
+        } else {
+          rowM.values[mkM] = cents;
+          rowM.once = true;
+          rowM.onceMonth = mkM;
+        }
+        (isInc ? state.income : state.expenses).push(rowM);
+        persist();
+        render();
+        closeQuick();
+        var what = isInc ? 'Receita' : 'Despesa';
+        if(nParc > 1) showToast(what + ' parcelada: ' + nParc + ' × ' + fmtMoney(cents) + ' adicionada.', 'success', 3200);
+        else showToast(what + ' de ' + fmtMoney(cents) + ' adicionada.', 'success', 2600);
+        return;
+      }
+
+      var mk = getSelectedDiarioMonth();
+      ensureMonth(mk);
       if(isNaN(day)) day = diarioDay();
       day = Math.max(1, Math.min(lastDayOfMonth(mk), day));
       var id = 'd' + (state.daily.nextId++);
-      state.daily.entries.push({ id: id, day: day, item: (qItem.value || '').trim(), amount: cents, monthKey: mk });
+      var entry = { id: id, day: day, item: name, amount: cents, monthKey: mk };
+      if(isInc) entry.type = 'income';
+      state.daily.entries.push(entry);
       persist();
       renderDiario();
       closeQuick();
-      showToast('Gasto de ' + fmtMoney(cents) + ' lançado.', 'success', 2600);
+      showToast((isInc ? 'Receita' : 'Despesa') + ' de ' + fmtMoney(cents) + ' lançada.', 'success', 2600);
     });
   }
 
@@ -1198,7 +1320,8 @@
       if(e.target !== diarioSaldoAtualInput) diarioSaldoAtualInput.focus();
     });
     diarioSaldoAtualInput.addEventListener('focus', function(){
-      diarioSaldoAtualInput.value = centsToEdit(saldoAtualCents);
+      // mês sem saldo: o campo abre vazio
+      diarioSaldoAtualInput.value = isMonthTracked(getSelectedDiarioMonth()) ? centsToEdit(saldoAtualCents) : '';
       setTimeout(function(){ try{ diarioSaldoAtualInput.select(); }catch(e){} }, 0);
     });
     diarioSaldoAtualInput.addEventListener('keydown', function(e){
@@ -1206,43 +1329,35 @@
     });
     diarioSaldoAtualInput.addEventListener('blur', function(){
       var txt = diarioSaldoAtualInput.value.trim();
+      var mk = getSelectedDiarioMonth();
+      var tracked = isMonthTracked(mk);
+      function shown(){ return isMonthTracked(mk) ? fmtMoney(saldoAtualCents) : '—'; }
       // vazio ou igual ao atual: não altera nada
-      if(txt === '' || txt === centsToEdit(saldoAtualCents)){
-        diarioSaldoAtualInput.value = fmtMoney(saldoAtualCents);
+      if(txt === '' || (tracked && txt === centsToEdit(saldoAtualCents))){
+        diarioSaldoAtualInput.value = shown();
         return;
       }
       var v = parseCentsText(txt);
       if(v === null){
         showToast('Valor inválido. Use o formato 1234,56.', 'error');
-        diarioSaldoAtualInput.value = fmtMoney(saldoAtualCents);
+        diarioSaldoAtualInput.value = shown();
         return;
       }
-      var mk = getSelectedDiarioMonth();
+      ensureMonth(mk);
       recomputeDailyBalances();
-      var expTotal = sumDailyMonth(mk).total;
-      var mensalCaido = mensalSaldoFor(mk, mensalCutoffDay(mk));
-      state.daily.balances[mk] = { initial: v + expTotal - mensalCaido, manual: true };
+      state.daily.balances[mk] = { initial: v - dailyNetMonth(mk) + mensalDespesaCaida(mk), manual: true };
       marcarBoasVindas();
       persist();
       renderDiario();
-      diarioSaldoAtualInput.value = fmtMoney(saldoAtualCents);
+      diarioSaldoAtualInput.value = shown();
     });
   }
 
-  function addRow(kind){
-    var list = kind === 'expenses' ? state.expenses : state.income;
-    var id = (kind === 'expenses' ? 'e' : 'r') + (state.nextId++);
-    list.push({ id:id, day:null, item:'', values:{}, instTotal: 1, instStart: state.selectedMonth });
-    persist();
-    render();
-    focusLastName(kind === 'expenses' ? 'expensesBody' : 'incomeBody');
-  }
-
   var btnAddExpense = document.getElementById('addExpenseBtn');
-  if(btnAddExpense) btnAddExpense.addEventListener('click', function(){ addRow('expenses'); });
+  if(btnAddExpense) btnAddExpense.addEventListener('click', openQuick);
 
   var btnAddIncome = document.getElementById('addIncomeBtn');
-  if(btnAddIncome) btnAddIncome.addEventListener('click', function(){ addRow('income'); });
+  if(btnAddIncome) btnAddIncome.addEventListener('click', openQuick);
 
   function marcarBoasVindas(){ lsSet(WELCOME_KEY, '1'); }
 
@@ -1336,11 +1451,41 @@
   /* Botão voltar do Android (@capacitor/app): fecha a camada de cima; depois vai ao Diário;
      já no Diário, sai do app. */
   var backButtonBound = false;
+
+  /* Abre sempre no mês atual e no dia de hoje */
+  function goToCurrentMonth(){
+    if(!state) return;
+    var tk = getTodayMonthKey();
+    ensureCurrentMonthSelected();
+    state.selectedMonth = tk;
+    state.selectedDiarioMonth = tk;
+    diarioData = todayISO();
+    anualSelected = null;
+  }
+
+  var pausedAt = 0;
+  function setupResume(AppP){
+    try{
+      var r = AppP.addListener('appStateChange', function(s){
+        if(!s || !state) return;
+        if(!s.isActive){ pausedAt = Date.now(); return; }
+        // voltou de segundo plano depois de mais de 1 minuto: volta ao mês atual
+        if(pausedAt && Date.now() - pausedAt > 60000){
+          goToCurrentMonth();
+          showView(document.body.getAttribute('data-view') || 'diario');
+        }
+        pausedAt = 0;
+      });
+      if(r && typeof r.catch === 'function') r.catch(function(){});
+    }catch(e){}
+  }
+
   function setupBackButton(){
     if(backButtonBound) return;
     var AppP = nativePlugin('App');
     if(!AppP || typeof AppP.addListener !== 'function') return;
     backButtonBound = true;
+    setupResume(AppP);
     try{
       var r = AppP.addListener('backButton', function(){
         if(closeTopLayer()) return;
@@ -1600,11 +1745,10 @@
         return;
       }
       var mk = getSelectedDiarioMonth();
+      ensureMonth(mk);
       recomputeDailyBalances();
-      var expTotal = sumDailyMonth(mk).total;
-      var mensalCaido = mensalSaldoFor(mk, mensalCutoffDay(mk));
       var primeiro = state.months.slice().sort()[0] === mk;
-      state.daily.balances[mk] = { initial: cents + expTotal - mensalCaido, manual: !primeiro };
+      state.daily.balances[mk] = { initial: cents - dailyNetMonth(mk) + mensalDespesaCaida(mk), manual: !primeiro };
       marcarBoasVindas();
       persist();
       renderDiario();
@@ -1711,32 +1855,61 @@
     return c ? c.querySelectorAll('.year-card') : [];
   }
 
+  var anualYearList = [];
+
+  /* Seletor de ano ‹ ano ›, no mesmo padrão visual do seletor de mês.
+     Navega pelos anos que têm meses cadastrados (são os cartões do carrossel). */
   function renderAnualTabs(years){
+    anualYearList = years;
     var row = document.getElementById('anualTabs');
     if(!row) return;
     row.innerHTML = '';
-    years.forEach(function(y){
-      var btn = el('button', 'tab' + (y === anualSelected ? ' active' : ''), y);
-      btn.type = 'button';
-      btn.setAttribute('data-year', y);
-      btn.addEventListener('click', function(){
-        anualSelected = y;
-        updateAnualTabs();
-        alignCarousel(true);
-      });
-      row.appendChild(btn);
-    });
+    var idx = years.indexOf(anualSelected);
+
+    function go(y){
+      anualSelected = y;
+      updateAnualTabs();
+      alignCarousel(true);
+    }
+
+    var nav = el('div', 'date-nav');
+    var pill = el('div', 'date-picker-pill');
+
+    var prev = el('button', 'btn-icon', '‹');
+    prev.type = 'button';
+    prev.title = 'Ano anterior';
+    prev.setAttribute('aria-label', 'Ano anterior');
+    prev.disabled = idx <= 0;
+    prev.addEventListener('click', function(){ if(idx > 0) go(years[idx - 1]); });
+
+    var label = el('span', 'month-label', anualSelected || '');
+    label.setAttribute('aria-live', 'polite');
+
+    var next = el('button', 'btn-icon', '›');
+    next.type = 'button';
+    next.title = 'Próximo ano';
+    next.setAttribute('aria-label', 'Próximo ano');
+    next.disabled = idx < 0 || idx >= years.length - 1;
+    next.addEventListener('click', function(){ if(idx > -1 && idx < years.length - 1) go(years[idx + 1]); });
+
+    pill.appendChild(prev);
+    pill.appendChild(label);
+    pill.appendChild(next);
+    nav.appendChild(pill);
+
+    var thisYear = String(new Date().getFullYear());
+    if(anualSelected !== thisYear && years.indexOf(thisYear) !== -1){
+      var hoje = el('button', 'btn-hoje', 'Hoje');
+      hoje.type = 'button';
+      hoje.title = 'Voltar ao ano atual';
+      hoje.addEventListener('click', function(){ go(thisYear); });
+      nav.appendChild(hoje);
+    }
+    row.appendChild(nav);
   }
 
   function updateAnualTabs(){
-    var row = document.getElementById('anualTabs');
-    if(!row) return;
-    var tabs = row.querySelectorAll('.tab');
-    for(var i = 0; i < tabs.length; i++){
-      var on = tabs[i].getAttribute('data-year') === anualSelected;
-      tabs[i].classList.toggle('active', on);
-      if(on){ try{ tabs[i].scrollIntoView({ block: 'nearest', inline: 'nearest' }); }catch(e){} }
-    }
+    renderAnualTabs(anualYearList);
   }
 
   function alignCarousel(smooth){
@@ -1958,6 +2131,7 @@
       }
       if(!state) state = emptyData();
       ensureCurrentMonthSelected();
+      goToCurrentMonth();
       persist();
       showView('diario');
       startNotifications();
